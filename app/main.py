@@ -48,9 +48,9 @@ async def lifespan(app: FastAPI):
     logger.info("🗄️   Database ready.")
 
     # ── MQTT ───────────────────────────────────────────────────────────────────
-    logger.info("📡  Connecting to MQTT broker at %s:%s …", settings.mqtt_broker_url, settings.mqtt_port)
+    logger.info("📡  Initiating MQTT Connection to %s:%s …", settings.mqtt_broker_url, settings.mqtt_port)
     try:
-        mqtt.init_app(app)
+        await mqtt.mqtt_startup()
     except Exception as exc:
         logger.warning(
             "⚠️  MQTT broker connection failed at startup: %s\n"
@@ -60,7 +60,8 @@ async def lifespan(app: FastAPI):
 
     yield  # Application is running
 
-    logger.info("🛑  Shutting down.")
+    logger.info("🛑  Shutting down. Closing MQTT Connection...")
+    await mqtt.mqtt_shutdown()
 
 
 # ── App factory ────────────────────────────────────────────────────────────────
@@ -77,6 +78,7 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
         lifespan=lifespan,
     )
+    mqtt.init_app(app)
 
     # ── CORS ───────────────────────────────────────────────────────────────────
     app.add_middleware(

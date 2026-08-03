@@ -33,10 +33,25 @@ class Base(DeclarativeBase):
 
 # ── FastAPI Dependency ─────────────────────────────────────────────────────────
 def get_db():
-    """Yield a database session and guarantee it is closed after the request."""
+    """
+    Yield a database session for a single request lifetime.
+
+    Lifecycle:
+      - Session is created fresh per request (autocommit=False, autoflush=False).
+      - On success: the route function calls db.commit() explicitly.
+      - On any unhandled exception: we call db.rollback() here BEFORE close(),
+        so the connection is returned to the pool in a clean state.
+        Without this, SQLAlchemy's pool issues its own implicit ROLLBACK on
+        close(), which can shadow a real commit and cause 'successful 201 but
+        nothing persisted' symptoms.
+      - db.close() always runs (returns the connection to the pool).
+    """
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 

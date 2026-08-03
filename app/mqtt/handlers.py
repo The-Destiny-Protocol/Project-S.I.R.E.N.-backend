@@ -37,25 +37,46 @@ from app.services.geospatial import find_nearest_police_unit
 logger = logging.getLogger(__name__)
 
 # ── Topic constants ────────────────────────────────────────────────────────────
-TELEMETRY_TOPIC = "sih/ambulance/telemetry/#"  # wildcard — matches all ambulance IDs
+# '+' is the single-level wildcard — matches exactly one topic segment (the ambulance_id).
+# '#' would also work at the end but '+' is more precise and avoids matching sub-levels.
+TELEMETRY_TOPIC = "sih/ambulance/telemetry/+"
 TRIGGER_TOPIC_TEMPLATE = "sih/police/trigger/{police_id}"
 
 
 # ── Connection callback ────────────────────────────────────────────────────────
 @mqtt.on_connect()
 def handle_connect(client, flags, rc, properties):
-    """Called once the MQTT client successfully connects to the broker."""
-    if rc == 0:
-        logger.info("✅  MQTT connected to broker. Subscribing to telemetry topic.")
-        mqtt.client.subscribe(TELEMETRY_TOPIC, qos=1)
+    """
+    Called once the MQTT client connects (or reconnects) to the broker.
+
+    gmqtt with MQTT v5 passes rc as a ReasonCode object; MQTT v3.1.1 passes
+    a plain int. We normalise both to an int value for comparison.
+    rc == 0  → success.
+    """
+    # Normalise ReasonCode object (gmqtt MQTT v5) or plain int (MQTT v3)
+    rc_value = rc.value if hasattr(rc, "value") else int(rc)
+
+    if rc_value == 0:
+        logger.info(
+            "✅  Connected to MQTT broker at %s — rc=%s. Subscribing to: %s",
+            client._host if hasattr(client, "_host") else "broker",
+            rc_value,
+            TELEMETRY_TOPIC,
+        )
+        # Subscribe inside on_connect so it auto-resubscribes on reconnection
+        client.subscribe(TELEMETRY_TOPIC, qos=1)
     else:
-        logger.error("❌  MQTT connection failed with return code: %s", rc)
+        logger.error(
+            "❌  MQTT connection FAILED — rc=%s (%s). Check broker URL, port, credentials, and TLS config.",
+            rc_value,
+            rc,
+        )
 
 
 # ── Disconnect callback ────────────────────────────────────────────────────────
 @mqtt.on_disconnect()
 def handle_disconnect(client, packet, exc=None):
-    logger.warning("⚠️   MQTT disconnected. exc=%s", exc)
+    logger.warning("⚠️   MQTT disconnected. Will attempt reconnect. exc=%s", exc)
 
 
 # ── Message callback ───────────────────────────────────────────────────────────
@@ -66,7 +87,13 @@ async def handle_message(client, topic: str, payload: bytes, qos: int, propertie
 
     Expected topic format: sih/ambulance/telemetry/{ambulance_id}
     """
-    logger.debug("📨  MQTT message received | topic=%s qos=%s", topic, qos)
+    # Promoted to INFO so every inbound message is visible at default log level
+    logger.info(
+        "📩  MQTT message received | topic=%s | qos=%s | payload=%s",
+        topic,
+        qos,
+        payload.decode("utf-8", errors="replace"),
+    )
 
     topic_parts = topic.split("/")
 
@@ -76,6 +103,7 @@ async def handle_message(client, topic: str, payload: bytes, qos: int, propertie
         await _handle_telemetry(ambulance_id, payload)
     else:
         logger.debug("Unhandled topic: %s", topic)
+
 
 
 # ── Telemetry handler ──────────────────────────────────────────────────────────
@@ -128,7 +156,7 @@ async def _handle_telemetry(ambulance_id: str, raw_payload: bytes) -> None:
             db.commit()
 
         # ── 3. Trigger nearest police unit if blocked ──────────────────────────
-        if status == "blocked":
+        if status.lower() == "blocked":
             await _trigger_nearest_police(ambulance_id, lat, lng, db)
 
     except Exception as exc:
@@ -159,7 +187,7 @@ async def _trigger_nearest_police(
     trigger_topic = TRIGGER_TOPIC_TEMPLATE.format(police_id=str(nearest.id))
     trigger_payload = json.dumps({"flash": True, "ambulance_id": ambulance_id})
 
-    await mqtt.publish(trigger_topic, trigger_payload, qos=1)
+    mqtt.publish(trigger_topic, trigger_payload, qos=1)
 
     logger.info(
         "🚨  Trigger published → topic=%s  police_unit_code=%s",

@@ -51,9 +51,18 @@ def register_ambulance(
         status="active",
         location=from_shape(Point(body.lng, body.lat), srid=4326),
     )
-    db.add(ambulance)
-    db.commit()
-    db.refresh(ambulance)
+
+    try:
+        db.add(ambulance)
+        db.commit()          # ← explicit COMMIT; only runs if no exception above
+        db.refresh(ambulance)
+    except Exception as exc:
+        db.rollback()        # ← explicit ROLLBACK on any DB error
+        logger.exception("❌  Failed to register ambulance: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error while registering ambulance: {exc}",
+        )
 
     logger.info("🚑  Registered ambulance id=%s operator=%s", ambulance.id, ambulance.operator_type)
     return AmbulanceRegisterResponse(id=ambulance.id)
@@ -74,21 +83,40 @@ def seed_police_unit(
     body: PoliceUnitRegisterRequest,
     db: Session = Depends(get_db),
 ) -> PoliceUnitResponse:
-    existing = db.query(PoliceUnit).filter(PoliceUnit.unit_code == body.unit_code).first()
+    # ── Duplicate check ────────────────────────────────────────────────────────
+    try:
+        existing = db.query(PoliceUnit).filter(PoliceUnit.unit_code == body.unit_code).first()
+    except Exception as exc:
+        logger.exception("❌  DB error during duplicate check: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error during duplicate check: {exc}",
+        )
+
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"PoliceUnit with unit_code '{body.unit_code}' already exists.",
         )
 
+    # ── Insert ─────────────────────────────────────────────────────────────────
     unit = PoliceUnit(
         id=uuid.uuid4(),
         unit_code=body.unit_code,
         location=from_shape(Point(body.lng, body.lat), srid=4326),
     )
-    db.add(unit)
-    db.commit()
-    db.refresh(unit)
+
+    try:
+        db.add(unit)
+        db.commit()          # ← explicit COMMIT
+        db.refresh(unit)
+    except Exception as exc:
+        db.rollback()        # ← explicit ROLLBACK on any DB error
+        logger.exception("❌  Failed to seed police unit: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error while seeding police unit: {exc}",
+        )
 
     logger.info("🚔  Seeded police unit id=%s code=%s", unit.id, unit.unit_code)
 

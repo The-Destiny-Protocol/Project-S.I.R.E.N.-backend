@@ -16,6 +16,7 @@ PostGIS approach:
 import logging
 from typing import Optional
 
+from geoalchemy2 import Geography
 from geoalchemy2.functions import ST_Distance, ST_MakePoint, ST_SetSRID
 from sqlalchemy import cast, func
 from sqlalchemy.orm import Session
@@ -24,8 +25,9 @@ from app.models.police_unit import PoliceUnit
 
 logger = logging.getLogger(__name__)
 
-# PostGIS geography type string (used for accurate metre-based distance)
-_GEOGRAPHY = "geography"
+# PostGIS geography type (used for accurate metre-based distance)
+# Replaced raw string "geography" with geoalchemy2.Geography type to fix SQLAlchemy 2.0 cache key error.
+_GEOGRAPHY = Geography()
 
 
 def find_nearest_police_unit(
