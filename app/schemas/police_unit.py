@@ -20,11 +20,30 @@ class PoliceUnitResponse(BaseModel):
 
     model_config = {"from_attributes": True}
 
-    id: uuid.UUID
-    unit_code: str
-    lat: Optional[float] = None
-    lng: Optional[float] = None
-    updated_at: Optional[datetime] = None
+    id: uuid.UUID = Field(
+        ...,
+        description="Unique identifier for the police unit.",
+        examples=["550e8400-e29b-41d4-a716-446655440000"]
+    )
+    unit_code: str = Field(
+        ...,
+        description="Human-readable police unit call-sign, e.g. OD-PCR-001.",
+        examples=["OD-PCR-001"]
+    )
+    lat: Optional[float] = Field(
+        None,
+        description="Latest latitude (WGS-84).",
+        examples=[20.2960]
+    )
+    lng: Optional[float] = Field(
+        None,
+        description="Latest longitude (WGS-84).",
+        examples=[85.8245]
+    )
+    updated_at: Optional[datetime] = Field(
+        None,
+        description="Timestamp of the last telemetry update."
+    )
 
 
 class PoliceUnitRegisterRequest(BaseModel):

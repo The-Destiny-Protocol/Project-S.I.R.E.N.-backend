@@ -58,12 +58,35 @@ class AmbulanceResponse(BaseModel):
 
     model_config = {"from_attributes": True}
 
-    id: uuid.UUID
-    operator_type: str
-    status: str
-    lat: Optional[float] = None
-    lng: Optional[float] = None
-    updated_at: Optional[datetime] = None
+    id: uuid.UUID = Field(
+        ..., 
+        description="Unique identifier for the ambulance.", 
+        examples=["123e4567-e89b-12d3-a456-426614174000"]
+    )
+    operator_type: str = Field(
+        ...,
+        description="Operator category, e.g. GOVT, PRIVATE, NGO.",
+        examples=["GOVT"]
+    )
+    status: str = Field(
+        ...,
+        description="Current operational status (e.g. active, inactive, dispatched).",
+        examples=["active"]
+    )
+    lat: Optional[float] = Field(
+        None,
+        description="Latest latitude (WGS-84).",
+        examples=[20.2960]
+    )
+    lng: Optional[float] = Field(
+        None,
+        description="Latest longitude (WGS-84).",
+        examples=[85.8245]
+    )
+    updated_at: Optional[datetime] = Field(
+        None,
+        description="Timestamp of the last telemetry update."
+    )
 
 
 class AmbulanceRegisterResponse(BaseModel):

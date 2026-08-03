@@ -16,7 +16,7 @@ from geoalchemy2.shape import from_shape, to_shape
 from shapely.geometry import Point
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_admin
+from app.api.deps import RoleChecker
 from app.database import get_db
 from app.models.ambulance import Ambulance
 from app.models.police_unit import PoliceUnit
@@ -24,6 +24,7 @@ from app.models.user import User
 from app.schemas.ambulance import (
     AmbulanceRegisterRequest,
     AmbulanceRegisterResponse,
+    AmbulanceResponse,
 )
 from app.schemas.police_unit import PoliceUnitRegisterRequest, PoliceUnitResponse
 
@@ -46,7 +47,7 @@ router = APIRouter(prefix="/ambulances", tags=["Ambulances"])
 def register_ambulance(
     body: AmbulanceRegisterRequest,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(get_current_admin),
+    current_admin: User = Depends(RoleChecker(["Admin"])),
 ) -> AmbulanceRegisterResponse:
     ambulance = Ambulance(
         id=uuid.uuid4(),
@@ -71,6 +72,37 @@ def register_ambulance(
     return AmbulanceRegisterResponse(id=ambulance.id)
 
 
+@router.get(
+    "/active",
+    response_model=list[AmbulanceResponse],
+    summary="Get active ambulances",
+    description="Retrieve all currently active ambulances with their latest geographic coordinates.",
+)
+def get_active_ambulances(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(RoleChecker(["Admin", "Dispatcher"])),
+) -> list[AmbulanceResponse]:
+    """
+    Fetch all active ambulances from the database.
+    Standard frontend and simulation clients can access this.
+    """
+    ambulances = db.query(Ambulance).filter(Ambulance.status == "active").all()
+    results = []
+    for amb in ambulances:
+        pt = to_shape(amb.location)
+        results.append(
+            AmbulanceResponse(
+                id=amb.id,
+                operator_type=amb.operator_type,
+                status=amb.status,
+                lat=pt.y,
+                lng=pt.x,
+                updated_at=amb.updated_at,
+            )
+        )
+    return results
+
+
 # ── Dev-helper: seed a police unit ────────────────────────────────────────────
 @router.post(
     "/seed-police",
@@ -85,7 +117,7 @@ def register_ambulance(
 def seed_police_unit(
     body: PoliceUnitRegisterRequest,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(get_current_admin),
+    current_admin: User = Depends(RoleChecker(["Admin"])),
 ) -> PoliceUnitResponse:
     # ── Duplicate check ────────────────────────────────────────────────────────
     try:

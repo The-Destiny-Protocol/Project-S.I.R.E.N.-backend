@@ -44,11 +44,21 @@ def get_current_user(
     return user
 
 
-def get_current_admin(current_user: User = Depends(get_current_user)) -> User:
-    """Enforces the 'Admin' role on the current user."""
-    if current_user.role != "Admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="The user doesn't have enough privileges",
-        )
-    return current_user
+class RoleChecker:
+    """
+    Dependency class to enforce Role-Based Access Control (RBAC).
+    Usage:
+        Depends(RoleChecker(["admin", "control_room"]))
+    """
+    def __init__(self, allowed_roles: list[str]):
+        self.allowed_roles = allowed_roles
+
+    def __call__(self, current_user: User = Depends(get_current_user)) -> User:
+        # Convert to lower to handle case insensitivity if needed, though roles can be exact.
+        if current_user.role.lower() not in [r.lower() for r in self.allowed_roles]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Operation not permitted. Required roles: {self.allowed_roles}",
+            )
+        return current_user
+

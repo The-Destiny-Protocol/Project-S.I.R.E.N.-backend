@@ -90,9 +90,12 @@ def create_app() -> FastAPI:
 
     # ── Routers ────────────────────────────────────────────────────────────────
     from app.api.routers import auth as auth_router
+    from app.routers import police as police_router
+
     app.include_router(auth_router.router, prefix="/api/v1")
     app.include_router(ambulance_router.router, prefix="/api/v1")
     app.include_router(corridor_router.router, prefix="/api/v1")
+    app.include_router(police_router.router, prefix="/api/v1")
 
     # ── Health check ───────────────────────────────────────────────────────────
     @app.get("/health", tags=["Health"])

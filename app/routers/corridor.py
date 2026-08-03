@@ -14,9 +14,11 @@ from fastapi import APIRouter, Depends
 from geoalchemy2.shape import to_shape
 from sqlalchemy.orm import Session
 
+from app.api.deps import RoleChecker
 from app.database import get_db
 from app.models.ambulance import Ambulance
 from app.models.police_unit import PoliceUnit
+from app.models.user import User
 from app.schemas.ambulance import AmbulanceResponse
 from app.schemas.police_unit import PoliceUnitResponse
 
@@ -37,7 +39,10 @@ class CorridorStatusResponse:
         "registered police units. Intended for the command-centre dashboard."
     ),
 )
-def get_corridor_status(db: Session = Depends(get_db)) -> dict:
+def get_corridor_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(RoleChecker(["Admin", "Dispatcher"])),
+) -> dict:
     """
     Fetch and serialize all active ambulances + all police units.
 
