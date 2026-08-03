@@ -1,16 +1,17 @@
 # ── Web Framework ──────────────────────────────────────────────────────────────
-fastapi==0.111.0
-uvicorn[standard]==0.29.0
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
 
 # ── MQTT ───────────────────────────────────────────────────────────────────────
 fastapi-mqtt==2.1.0
 
 # ── Database ───────────────────────────────────────────────────────────────────
-sqlalchemy==2.0.30
-geoalchemy2==0.15.1
-psycopg2-binary==2.9.9
+sqlalchemy==2.0.36        # 2.0.36 fixes Python 3.13 FastIntFlag incompatibility
+geoalchemy2==0.15.2
+psycopg2-binary          # unpinned — pip will pick the correct pre-built wheel
+shapely                  # required by geoalchemy2 shape helpers in handlers.py
 
 # ── Pydantic / Settings ────────────────────────────────────────────────────────
-pydantic==2.7.1
-pydantic-settings==2.2.1
+pydantic==2.10.6          # 2.10.x ships cp313-win_amd64 pre-built wheels
+pydantic-settings==2.7.1  # compatible with pydantic 2.10.x
 python-dotenv==1.0.1

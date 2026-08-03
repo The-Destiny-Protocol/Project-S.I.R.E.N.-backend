@@ -49,12 +49,29 @@ def init_db() -> None:
 
     Prerequisite: the PostgreSQL role used must have CREATE EXTENSION privilege,
     OR the extension must already exist on the target database.
+
+    If PostgreSQL is not reachable at startup the error is logged as a warning
+    and the app continues — endpoints that require the DB will return 503 until
+    the database becomes available.
     """
-    with engine.connect() as conn:
-        conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
-        conn.commit()
+    import logging
+    _log = logging.getLogger(__name__)
 
-    # Import models so their metadata is registered on Base before create_all
-    from app.models import ambulance, police_unit  # noqa: F401
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
+            conn.commit()
 
-    Base.metadata.create_all(bind=engine)
+        # Import models so their metadata is registered on Base before create_all
+        from app.models import ambulance, police_unit  # noqa: F401
+
+        Base.metadata.create_all(bind=engine)
+        _log.info("Database tables verified / created successfully.")
+
+    except Exception as exc:
+        _log.warning(
+            "⚠️  Could not connect to PostgreSQL at startup: %s\n"
+            "    The server will start anyway. DB-backed endpoints will return 503 "
+            "until the database is reachable.",
+            exc,
+        )

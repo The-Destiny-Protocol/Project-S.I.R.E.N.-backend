@@ -47,8 +47,16 @@ async def lifespan(app: FastAPI):
     init_db()
     logger.info("🗄️   Database ready.")
 
-    # 2. MQTT — connect to broker (FastMQTT handles the async loop internally)
+    # ── MQTT ───────────────────────────────────────────────────────────────────
     logger.info("📡  Connecting to MQTT broker at %s:%s …", settings.mqtt_broker_url, settings.mqtt_port)
+    try:
+        mqtt.init_app(app)
+    except Exception as exc:
+        logger.warning(
+            "⚠️  MQTT broker connection failed at startup: %s\n"
+            "    REST endpoints will still work. MQTT will retry via reconnect logic.",
+            exc,
+        )
 
     yield  # Application is running
 
@@ -77,9 +85,6 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    # ── MQTT ───────────────────────────────────────────────────────────────────
-    mqtt.init_app(app)
 
     # ── Routers ────────────────────────────────────────────────────────────────
     app.include_router(ambulance_router.router, prefix="/api/v1")
