@@ -15,3 +15,8 @@ shapely                  # required by geoalchemy2 shape helpers in handlers.py
 pydantic==2.10.6          # 2.10.x ships cp313-win_amd64 pre-built wheels
 pydantic-settings==2.7.1  # compatible with pydantic 2.10.x
 python-dotenv==1.0.1
+
+# ── Security ───────────────────────────────────────────────────────────────────
+PyJWT==2.8.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.1.2

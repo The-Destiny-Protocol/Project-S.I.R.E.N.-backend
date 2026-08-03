@@ -16,9 +16,11 @@ from geoalchemy2.shape import from_shape, to_shape
 from shapely.geometry import Point
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_admin
 from app.database import get_db
 from app.models.ambulance import Ambulance
 from app.models.police_unit import PoliceUnit
+from app.models.user import User
 from app.schemas.ambulance import (
     AmbulanceRegisterRequest,
     AmbulanceRegisterResponse,
@@ -44,6 +46,7 @@ router = APIRouter(prefix="/ambulances", tags=["Ambulances"])
 def register_ambulance(
     body: AmbulanceRegisterRequest,
     db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
 ) -> AmbulanceRegisterResponse:
     ambulance = Ambulance(
         id=uuid.uuid4(),
@@ -82,6 +85,7 @@ def register_ambulance(
 def seed_police_unit(
     body: PoliceUnitRegisterRequest,
     db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
 ) -> PoliceUnitResponse:
     # ── Duplicate check ────────────────────────────────────────────────────────
     try:

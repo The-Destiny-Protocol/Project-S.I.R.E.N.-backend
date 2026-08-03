@@ -20,6 +20,7 @@ _ssl_ctx = ssl.create_default_context()
 _ssl_ctx.check_hostname = True
 _ssl_ctx.verify_mode = ssl.CERT_REQUIRED
 
+
 mqtt_config = MQTTConfig(
     host=settings.mqtt_broker_url,
     port=settings.mqtt_port,
