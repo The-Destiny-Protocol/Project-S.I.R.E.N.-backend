@@ -1,0 +1,45 @@
+# ── Secrets — NEVER commit these ──────────────────────────────────────────────
+.env
+*.env
+!.env.example
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+
+# ── Virtual environments ───────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ── IDE / Editor ───────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Pytest / Coverage ─────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Alembic (if added later) ───────────────────────────────────────────────────
+# alembic/versions/*.py   # uncomment if you want to ignore migration files
