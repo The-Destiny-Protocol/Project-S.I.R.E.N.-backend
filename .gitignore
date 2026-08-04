@@ -41,5 +41,8 @@ coverage.xml
 *.log
 logs/
 
+# ── PKI / Certificates ────────────────────────────────────────────────────────
+certs/
+
 # ── Alembic (if added later) ───────────────────────────────────────────────────
 # alembic/versions/*.py   # uncomment if you want to ignore migration files
