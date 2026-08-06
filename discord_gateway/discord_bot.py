@@ -34,11 +34,11 @@ import discord
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Your Discord Bot token from https://discord.com/developers/applications
-DISCORD_TOKEN: str = "YOUR_DISCORD_BOT_TOKEN_HERE"
+DISCORD_TOKEN: str = "MTUzNDg1NTY4NDI1MDc5NjEwNA.GPGyTI.G8CHqy-DinJZen_JQYvmHb2G8kUGX3wZ6_Jh6I"
 
 # The ID of the Voice Channel the bot should join to play the alert.
 # Right-click a voice channel in Discord → Copy Channel ID (enable Developer Mode first)
-VOICE_CHANNEL_ID: int = 123456789012345678
+VOICE_CHANNEL_ID: int = 1534858284194856960
 
 # The aiohttp web server will listen on this port.
 # NOTE: Update ROIP_GATEWAY_URL in app/services/roip_service.py to:
@@ -193,7 +193,7 @@ async def handle_roip_dispatch(request: web.Request) -> web.Response:
 
 async def start_web_server() -> None:
     """Start the aiohttp web server in the background."""
-    app = web.Application()
+    app = web.Application(client_max_size=1024**2 * 10)
     app.router.add_post("/api/v1/emergency/mock-roip-gateway", handle_roip_dispatch)
 
     runner = web.AppRunner(app)
