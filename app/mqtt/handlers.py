@@ -24,6 +24,7 @@ Flow for a "blocked" event:
 import json
 import logging
 from datetime import datetime, timezone
+import asyncio
 
 from geoalchemy2.shape import from_shape
 from shapely.geometry import Point
@@ -100,6 +101,19 @@ async def handle_message(client, topic: str, payload: bytes, qos: int, propertie
     # ── Ambulance telemetry ────────────────────────────────────────────────────
     if len(topic_parts) == 4 and topic_parts[:3] == ["sih", "ambulance", "telemetry"]:
         ambulance_id = topic_parts[3]
+
+        # Parse payload once here so we can broadcast without re-decoding
+        try:
+            payload_dict: dict = json.loads(payload.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            payload_dict = {"raw": payload.decode("utf-8", errors="replace")}
+
+        # ── Broadcast to all connected WebSocket clients (Live Map) ───────────
+        from app.services.ws_manager import live_map_manager  # local import avoids circular deps
+        asyncio.create_task(
+            live_map_manager.broadcast({"topic": topic, "payload": payload_dict})
+        )
+
         await _handle_telemetry(ambulance_id, payload)
     else:
         logger.debug("Unhandled topic: %s", topic)

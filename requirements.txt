@@ -1,6 +1,7 @@
 # ── Web Framework ──────────────────────────────────────────────────────────────
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
+python-multipart
 
 # ── MQTT ───────────────────────────────────────────────────────────────────────
 fastapi-mqtt==2.1.0
@@ -23,9 +24,9 @@ bcrypt==4.1.2
 
 
 # --- Computer Vision / Edge Node ---
-ultralytics
-opencv-python
-paho-mqtt
+# ultralytics
+# opencv-python
+# paho-mqtt
 
 # ── Emergency Dispatch (RoIP / TTS) ──────────────────────────────────────────
 pyttsx3           # Fully offline Text-to-Speech (no network required)
@@ -33,6 +34,7 @@ httpx             # Async HTTP client for dispatching audio to RoIP gateway
 
 # ── Discord Voice Gateway (Mock RoIP Bot) ─────────────────────────────────────
 discord.py        # Discord bot framework (voice support included)
-PyNaCl            # Required by discord.py for voice encryption
+PyNaCl
+davey            # Required by discord.py for voice encryption
 aiohttp           # Async web server for the gateway's HTTP endpoint
-
+

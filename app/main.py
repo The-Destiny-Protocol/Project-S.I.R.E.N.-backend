@@ -90,6 +90,8 @@ def create_app() -> FastAPI:
 
     # ── Routers ────────────────────────────────────────────────────────────────
     from app.api.routers import auth as auth_router
+    from app.api.routers import map as map_router
+    from app.api.routers import websockets as ws_router
     from app.routers import emergency as emergency_router
     from app.routers import police as police_router
 
@@ -98,6 +100,9 @@ def create_app() -> FastAPI:
     app.include_router(corridor_router.router, prefix="/api/v1")
     app.include_router(police_router.router, prefix="/api/v1")
     app.include_router(emergency_router.router, prefix="/api/v1")
+    app.include_router(map_router.router, prefix="/api/v1")
+    app.include_router(ws_router.router, prefix="/api/v1")
+
 
 
     # ── Health check ───────────────────────────────────────────────────────────

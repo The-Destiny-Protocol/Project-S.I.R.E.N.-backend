@@ -1,0 +1,73 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# .dockerignore
+# Prevents unnecessary files from being sent to the Docker build daemon.
+# Keeps the build context small and avoids leaking secrets into the image.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Secrets & environment ─────────────────────────────────────────────────────
+.env
+*.env
+.env.*
+!.env.example
+
+# ── Version control ───────────────────────────────────────────────────────────
+.git
+.gitignore
+.gitattributes
+
+# ── Python artifacts ──────────────────────────────────────────────────────────
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+
+# ── Virtual environments ──────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ── Test & tooling ────────────────────────────────────────────────────────────
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+*.egg-info/
+dist/
+build/
+
+# ── IDE / editor ──────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── YOLO model weights (large binary, not needed inside the image) ────────────
+edge_node/vision/weights/
+
+# ── PKI / TLS certificates (never ship into a container image) ────────────────
+certs/
+*.pem
+*.crt
+*.key
+*.p12
+
+# ── Temp / audio dispatch files ───────────────────────────────────────────────
+*.wav
+
+# ── Docker files themselves (no need to copy into the build context) ──────────
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# ── Docs & non-runtime files ──────────────────────────────────────────────────
+README.md
+AGENTS.md
+docs/
+scripts/
