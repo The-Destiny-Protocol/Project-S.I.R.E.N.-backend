@@ -3,8 +3,8 @@ from ultralytics import YOLO
 
 class EdgeVisionNode:
     def __init__(self, model_path="yolov8s.pt"):
-        # Loads the YOLOv8 Small model
-        self.model = YOLO(model_path)
+        
+        self.model = YOLO("edge_node/vision/weights/best.pt")
         self.camera = cv2.VideoCapture(0) 
     def process_stream(self):
         while self.camera.isOpened():

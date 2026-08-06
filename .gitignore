@@ -46,3 +46,16 @@ certs/
 
 # ── Alembic (if added later) ───────────────────────────────────────────────────
 # alembic/versions/*.py   # uncomment if you want to ignore migration files
+
+# Python environment & cache
+.venv/
+__pycache__/
+*.pyc
+
+# Heavy AI model weights & runs
+*.pt
+runs/
+edge_node/vision/weights/
+
+# Video test files
+*.mp4
