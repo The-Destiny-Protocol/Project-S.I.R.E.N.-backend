@@ -5,32 +5,40 @@ REST endpoints for the Emergency SOS / RoIP dispatch pipeline.
 
 Routes:
     POST /api/v1/emergency/ambulances/{ambulance_id}/sos
-        Trigger an SOS for a specific ambulance:
-          1. Update ambulance status → "SOS_ACTIVE"
-          2. Find the nearest police unit (PostGIS ST_Distance)
-          3. Persist an EmergencyIncident record
-          4. Queue a background voice alert (pyttsx3 → RoIP gateway)
-          5. Return SOSResponse immediately (non-blocking)
+        Trigger an SOS for a specific ambulance.
+
+    GET  /api/v1/emergency/incidents/active
+        List all DISPATCHED / SOS_ACTIVE incidents with ambulance + police context.
+
+    PATCH /api/v1/emergency/incidents/{incident_id}/resolve
+        Mark an incident as RESOLVED.
 
     POST /api/v1/emergency/mock-roip-gateway
-        Development stub that accepts the dispatched .wav bytes and logs them.
-        Replace with a real RoIP gateway URL in production.
+        Development stub for the RoIP audio gateway.
 """
 
 import logging
 import uuid
+from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from geoalchemy2.shape import from_shape
 from shapely.geometry import Point
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import RoleChecker
 from app.database import get_db
 from app.models.ambulance import Ambulance
 from app.models.incident import EmergencyIncident
+from app.models.police_unit import PoliceUnit
 from app.models.user import User
-from app.schemas.incident import SOSRequest, SOSResponse
+from app.schemas.incident import (
+    IncidentDetailResponse,
+    IncidentResolveResponse,
+    SOSRequest,
+    SOSResponse,
+)
 from app.services.geospatial import find_nearest_police_unit
 from app.services.roip_service import generate_and_dispatch_audio
 
@@ -193,3 +201,97 @@ async def mock_roip_gateway(request: Request) -> dict:
         "audio_size_bytes": len(body_bytes),
         "message": "Audio payload received by mock gateway. In production, this would be broadcast over radio.",
     }
+
+
+# ── GET /incidents/active ─────────────────────────────────────────────────────
+@router.get(
+    "/incidents/active",
+    response_model=list[IncidentDetailResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List Active Incidents",
+    description=(
+        "Returns all EmergencyIncidents with status 'DISPATCHED' or 'SOS_ACTIVE'. "
+        "Each record includes the full ambulance and police_unit context so the "
+        "Command Center dashboard has everything it needs to render the incident panel."
+    ),
+)
+def get_active_incidents(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(RoleChecker(["Admin", "Dispatcher"])),
+) -> list[Any]:
+    incidents = (
+        db.query(EmergencyIncident)
+        .options(
+            joinedload(EmergencyIncident.ambulance),
+            joinedload(EmergencyIncident.police_unit),
+        )
+        .filter(EmergencyIncident.status.in_(["DISPATCHED", "SOS_ACTIVE"]))
+        .order_by(EmergencyIncident.created_at.desc())
+        .all()
+    )
+
+    logger.info("[Incidents] Active incident query returned %d records.", len(incidents))
+    return incidents
+
+
+# ── PATCH /incidents/{incident_id}/resolve ────────────────────────────────────
+@router.patch(
+    "/incidents/{incident_id}/resolve",
+    response_model=IncidentResolveResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Resolve an Incident",
+    description=(
+        "Marks the specified EmergencyIncident as 'RESOLVED'. "
+        "Returns a confirmation with the resolution timestamp."
+    ),
+)
+def resolve_incident(
+    incident_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(RoleChecker(["Admin", "Dispatcher"])),
+) -> IncidentResolveResponse:
+    # ── Validate UUID format ───────────────────────────────────────────────────
+    try:
+        inc_uuid = uuid.UUID(incident_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid incident_id format: '{incident_id}' is not a valid UUID.",
+        )
+
+    # ── Fetch the incident ─────────────────────────────────────────────────────
+    incident = db.get(EmergencyIncident, inc_uuid)
+    if incident is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Incident '{incident_id}' not found.",
+        )
+
+    if incident.status == "RESOLVED":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Incident '{incident_id}' is already resolved.",
+        )
+
+    # ── Update status and persist ──────────────────────────────────────────────
+    resolved_at = datetime.now(timezone.utc)
+    try:
+        incident.status = "RESOLVED"
+        db.commit()
+        db.refresh(incident)
+    except Exception as exc:
+        db.rollback()
+        logger.exception("[Incidents] Failed to resolve incident %s: %s", incident_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error while resolving incident: {exc}",
+        )
+
+    logger.info("[Incidents] Incident %s resolved by user=%s", incident_id, current_user.username)
+
+    return IncidentResolveResponse(
+        incident_id=incident.id,
+        status="RESOLVED",
+        message=f"Incident {incident_id} resolved successfully.",
+        resolved_at=resolved_at,
+    )

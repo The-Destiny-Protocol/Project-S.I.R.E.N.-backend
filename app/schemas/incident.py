@@ -90,3 +90,64 @@ class SOSResponse(BaseModel):
     )
 
     model_config = {"from_attributes": True}
+
+
+# ── Supporting nested schemas ─────────────────────────────────────────────────
+
+class AmbulanceSummary(BaseModel):
+    """Minimal ambulance context embedded inside an active incident response."""
+
+    id: uuid.UUID
+    status: str
+    operator_type: str
+
+    model_config = {"from_attributes": True}
+
+
+class PoliceUnitSummary(BaseModel):
+    """Minimal police unit context embedded inside an active incident response."""
+
+    id: uuid.UUID
+    unit_code: str
+    radio_channel_id: Optional[str]
+
+    model_config = {"from_attributes": True}
+
+
+# ── GET /incidents/active ─────────────────────────────────────────────────────
+
+class IncidentDetailResponse(BaseModel):
+    """
+    Full incident record returned by GET /incidents/active,
+    with nested ambulance and police_unit context for the dashboard.
+    """
+
+    id: uuid.UUID = Field(..., description="Unique ID of the incident.")
+    ambulance_id: uuid.UUID
+    police_unit_id: Optional[uuid.UUID]
+    trigger_source: str = Field(
+        ...,
+        description="'MANUAL_DRIVER_SOS' or 'AUTO_VISION_ANOMALY'.",
+        examples=["MANUAL_DRIVER_SOS"],
+    )
+    status: str = Field(..., examples=["DISPATCHED"])
+    created_at: datetime
+
+    # Nested objects resolved from FK joins
+    ambulance: Optional[AmbulanceSummary] = None
+    police_unit: Optional[PoliceUnitSummary] = None
+
+    model_config = {"from_attributes": True}
+
+
+# ── PATCH /incidents/{id}/resolve ─────────────────────────────────────────────
+
+class IncidentResolveResponse(BaseModel):
+    """Response returned after successfully resolving an incident."""
+
+    incident_id: uuid.UUID
+    status: str = Field(..., examples=["RESOLVED"])
+    message: str = Field(..., examples=["Incident e89c6cbc-... resolved successfully."])
+    resolved_at: datetime
+
+    model_config = {"from_attributes": True}
