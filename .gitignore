@@ -53,9 +53,9 @@ __pycache__/
 *.pyc
 
 # Heavy AI model weights & runs
-*.pt
+# *.pt
 runs/
-edge_node/vision/weights/
+# edge_node/vision/weights/
 
 # Video test files
 *.mp4
