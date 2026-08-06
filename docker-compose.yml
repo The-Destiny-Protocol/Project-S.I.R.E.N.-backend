@@ -1,0 +1,59 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-compose.yml
+# Orchestrates the FastAPI backend and the Discord voice gateway bot.
+#
+# Usage:
+#   docker compose up --build          # first run / after changes
+#   docker compose up -d               # detached (background)
+#   docker compose logs -f api         # tail API logs
+#   docker compose logs -f discord-gateway  # tail bot logs
+#   docker compose down                # stop and remove containers
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── FastAPI / Uvicorn web server ────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sih_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+    volumes:
+      # Mount source for live reload during development.
+      # Remove this volume block for a production deployment.
+      - .:/app
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ── Discord Voice Gateway Bot ───────────────────────────────────────────────
+  discord-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sih_discord_gateway
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    command: python discord_gateway/discord_bot.py
+    volumes:
+      # Mount source alongside API for consistency during development.
+      - .:/app
+    depends_on:
+      api:
+        condition: service_healthy

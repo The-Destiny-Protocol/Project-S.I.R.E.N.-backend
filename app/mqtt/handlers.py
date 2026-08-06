@@ -24,6 +24,7 @@ Flow for a "blocked" event:
 import json
 import logging
 from datetime import datetime, timezone
+import asyncio
 
 from geoalchemy2.shape import from_shape
 from shapely.geometry import Point
