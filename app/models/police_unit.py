@@ -29,6 +29,10 @@ class PoliceUnit(Base):
     # Human-readable badge / call-sign, e.g. "DL-PCR-042"
     unit_code: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
 
+    # Radio channel / call-sign used for RoIP / walkie-talkie dispatch
+    # e.g. "ALPHA-7", "CH-04". Nullable for units not yet assigned a radio.
+    radio_channel_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
     # Current GPS position as a PostGIS POINT (longitude, latitude) in WGS-84
     location: Mapped[object] = mapped_column(
         Geometry(geometry_type="POINT", srid=4326),

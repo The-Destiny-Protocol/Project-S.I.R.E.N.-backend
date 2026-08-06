@@ -79,6 +79,7 @@ def init_db() -> None:
 
         # Import models so their metadata is registered on Base before create_all
         from app.models import ambulance, police_unit  # noqa: F401
+        from app.models.incident import EmergencyIncident  # noqa: F401
         from app.models.user import User  # noqa: F401
 
         Base.metadata.create_all(bind=engine)
