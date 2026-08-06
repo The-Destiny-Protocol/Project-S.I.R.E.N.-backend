@@ -57,26 +57,24 @@ The REST API layer serves the control-room dashboard and the simulation/frontend
                                                     │  └───────┬────────┘  │
                                                     │          │           │
                                                     │  ┌───────▼────────┐  │
-                                                    │  │ Geospatial     │  │
-                                                    │  │ Service        │  │  ◀── ST_Distance via PostGIS
-                                                    │  │ (geospatial.py)│  │
+                                                    │  │ Geospatial     │  │  ◀── ST_Distance via PostGIS
+                                                    │  │ Service        │  │
                                                     │  └───────┬────────┘  │
                                                     │          │           │
                                                     │  ┌───────▼────────┐  │
                                                     │  │ PostgreSQL +   │  │
                                                     │  │ PostGIS        │  │
-                                                    │  └────────────────┘  │
-                                                    │                      │
-                                                    │  ┌────────────────┐  │
+                                                    │  └───────┬────────┘  │
+                                                    │          │           │
+                                                    │  ┌───────▼────────┐  │
                                                     │  │ REST API       │  │  ◀── JWT-secured endpoints
-                                                    │  │ (routers/)     │  │
-                                                    │  └────────────────┘  │
-                                                    └──────────────────────┘
-                                                               ▲
-                                                               │  HTTPS
-                                                    ┌──────────┴───────────┐
-                                                    │  Control Room        │
-                                                    │  Dashboard / Frontend│
+                                                    │  │ WS Live Map    │  │  ◀── Real-time WS broadcasts
+                                                    │  └───────┬────────┘  │
+                                                    └──────────│───────────┘
+                                                               │  HTTP POST (.wav)
+                                                    ┌──────────▼───────────┐
+                                                    │ Discord Gateway      │
+                                                    │ (Mock RoIP Bot)      │  ──▶ Discord Voice Channel
                                                     └──────────────────────┘
 ```
 
@@ -91,6 +89,7 @@ The REST API layer serves the control-room dashboard and the simulation/frontend
 | **ORM**         | SQLAlchemy 2.0.36 + GeoAlchemy2 0.15.2           |
 | **Validation**  | Pydantic V2 (2.10.6) + pydantic-settings 2.7.1  |
 | **MQTT**        | HiveMQ Cloud (Free Tier) via fastapi-mqtt / gmqtt|
+| **Voice / RoIP**| pyttsx3 (TTS) + discord.py (Voice Gateway)       |
 | **Auth**        | JWT (PyJWT 2.8.0) + bcrypt (passlib 1.7.4)      |
 | **Language**    | Python 3.13                                      |
 
@@ -100,47 +99,41 @@ The REST API layer serves the control-room dashboard and the simulation/frontend
 
 ```
 SIH 2026/
-├── .env.example              # Environment variable template (safe to commit)
-├── .gitignore                # Git ignore rules
+├── Dockerfile                # Shared image for API and Discord bot
+├── docker-compose.yml        # Orchestrates both services
+├── .env.example              # Environment variable template
+├── project_explanation.md    # Comprehensive architectural deep-dive
 ├── requirements.txt          # Pinned Python dependencies
-├── scripts/
-│   └── generate_pki.sh       # (Reference) PKI cert generation script
+├── discord_gateway/
+│   └── discord_bot.py        # Standalone Mock RoIP Gateway (aiohttp + discord.py)
+├── edge_node/
+│   └── vision/               # YOLO AI vision anomaly detection (dashcam sim)
 │
 └── app/
-    ├── __init__.py
     ├── main.py               # FastAPI app factory, lifespan (DB + MQTT init)
-    ├── config.py             # pydantic-settings: reads .env into typed Settings
     ├── database.py           # SQLAlchemy engine, SessionLocal, Base, init_db()
     │
-    ├── core/
-    │   └── security.py       # Password hashing (bcrypt) + JWT token creation
-    │
-    ├── api/
-    │   ├── deps.py           # RoleChecker dependency + get_current_user (JWT)
-    │   └── routers/
-    │       └── auth.py       # POST /auth/login  +  POST /auth/register
-    │
-    ├── models/               # SQLAlchemy ORM models
-    │   ├── ambulance.py      # Ambulance (UUID, status, PostGIS POINT)
-    │   ├── police_unit.py    # PoliceUnit (UUID, unit_code, PostGIS POINT)
-    │   └── user.py           # User (UUID, username, hashed_password, role)
-    │
+    ├── models/               # SQLAlchemy ORM models (Ambulance, PoliceUnit, User, Incident)
     ├── schemas/              # Pydantic V2 request/response models
-    │   ├── ambulance.py      # AmbulanceRegisterRequest, AmbulanceResponse
-    │   ├── police_unit.py    # PoliceUnitResponse, PoliceUnitRegisterRequest
-    │   └── user.py           # UserCreate, UserResponse, Token, TokenData
     │
-    ├── routers/              # REST endpoint groups
-    │   ├── ambulance.py      # POST /register, GET /active, POST /seed-police
-    │   ├── police.py         # GET /units
-    │   └── corridor.py       # GET /status (combined ambulance + police view)
+    ├── api/routers/          # REST endpoint groups
+    │   ├── map.py            # GET /ambulances, /police (GeoJSON points)
+    │   ├── websockets.py     # WS /live-map (Real-time telemetry broadcast)
+    │   └── auth.py           # JWT auth
+    │
+    ├── routers/              # Domain endpoints
+    │   ├── emergency.py      # POST /sos, GET /incidents/active, PATCH /resolve
+    │   ├── ambulance.py      
+    │   └── police.py         
     │
     ├── services/
-    │   └── geospatial.py     # find_nearest_police_unit() — PostGIS ST_Distance
+    │   ├── geospatial.py     # find_nearest_police_unit() — PostGIS ST_Distance
+    │   ├── roip_service.py   # pyttsx3 offline TTS generation and HTTP dispatch
+    │   └── ws_manager.py     # ConnectionManager for Live Map broadcast
     │
     └── mqtt/
         ├── client.py         # FastMQTT + TLS SSLContext configuration
-        └── handlers.py       # on_connect, on_message, telemetry → trigger flow
+        └── handlers.py       # on_message, telemetry → trigger flow + WS broadcast
 ```
 
 ---
@@ -194,14 +187,27 @@ cp .env.example .env
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | ❌       | Token TTL in minutes (default: `30`)           |
 | `APP_ENV`                     | ❌       | `development` or `production`                  |
 
-### Running the Server
+### Running the Server (Docker - Recommended)
+
+The easiest way to run the entire backend stack (API + Discord Gateway) is via Docker Compose:
 
 ```bash
-# Development (with hot-reload)
+# Build and start in background
+docker compose up -d --build
+
+# View logs
+docker compose logs -f api
+docker compose logs -f discord-gateway
+```
+
+### Running Locally (Without Docker)
+
+```bash
+# Terminal 1: FastAPI Server
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
-# Production
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+# Terminal 2: Discord RoIP Bot
+python discord_gateway/discord_bot.py
 ```
 
 Open **http://localhost:8000/docs** for the interactive Swagger UI.
@@ -235,11 +241,21 @@ All endpoints are prefixed with `/api/v1`. Protected endpoints require a Bearer 
 |--------|---------------------------|----------------------|---------------------------------|
 | GET    | `/api/v1/police/units`    | `Admin`, `Dispatcher`| List all police unit locations  |
 
-### Corridor
+### Emergency / Incidents (SOS)
 
-| Method | Endpoint                  | Role Required        | Description                                     |
-|--------|---------------------------|----------------------|-------------------------------------------------|
-| GET    | `/api/v1/corridor/status` | `Admin`, `Dispatcher`| Combined view of ambulances + police units      |
+| Method | Endpoint                                 | Role Required        | Description                                      |
+|--------|------------------------------------------|----------------------|--------------------------------------------------|
+| POST   | `/api/v1/emergency/ambulances/{id}/sos`  | None                 | Triggers pipeline: Nearest Police + Voice Alert  |
+| GET    | `/api/v1/emergency/incidents/active`     | `Admin`, `Dispatcher`| List all active incidents with nested context    |
+| PATCH  | `/api/v1/emergency/incidents/{id}/resolve`| `Admin`, `Dispatcher`| Resolve an incident                              |
+
+### Live Map / Dashboard (GeoJSON & WS)
+
+| Method | Endpoint                        | Role Required        | Description                                      |
+|--------|---------------------------------|----------------------|--------------------------------------------------|
+| GET    | `/api/v1/map/ambulances`        | `Admin`, `Dispatcher`| All ambulances as GeoJSON FeatureCollection      |
+| GET    | `/api/v1/map/police`            | `Admin`, `Dispatcher`| All police units as GeoJSON FeatureCollection    |
+| WS     | `/api/v1/ws/live-map`           | None                 | Real-time MQTT telemetry broadcast               |
 
 ### Health
 
