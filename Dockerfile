@@ -17,9 +17,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # gcc     : required to compile some Python C-extensions (e.g. psycopg2-binary fallback)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        ffmpeg \
-        libpq-dev \
-        gcc \
+    ffmpeg \
+    libpq-dev \
+    gcc \
+    espeak \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
