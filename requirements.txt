@@ -29,7 +29,8 @@ bcrypt==4.1.2
 # paho-mqtt
 
 # ── Emergency Dispatch (RoIP / TTS) ──────────────────────────────────────────
-pyttsx3           # Fully offline Text-to-Speech (no network required)
+# pyttsx3
+gTTS==2.5.1           # Fully offline Text-to-Speech (no network required)
 httpx             # Async HTTP client for dispatching audio to RoIP gateway
 
 # ── Discord Voice Gateway (Mock RoIP Bot) ─────────────────────────────────────
