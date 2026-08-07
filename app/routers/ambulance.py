@@ -57,7 +57,7 @@ def register_ambulance(
         contact_number=body.contact_number,
         equipment_level=body.equipment_level,
         radio_channel_id=body.radio_channel_id,
-        status="active",
+        status=body.status,
         location=from_shape(Point(body.lng, body.lat), srid=4326),
     )
 

@@ -28,6 +28,7 @@ class AmbulanceRegisterRequest(BaseModel):
                     "contact_number": "+919876543210",
                     "equipment_level": "BLS",
                     "radio_channel_id": "CH-01",
+                    "status": "active",
                     "lat": _DEFAULT_LAT,
                     "lng": _DEFAULT_LNG,
                 }
@@ -66,6 +67,11 @@ class AmbulanceRegisterRequest(BaseModel):
         None,
         examples=["CH-01"],
         description="Assigned RoIP radio channel."
+    )
+    status: Optional[str] = Field(
+        default="active",
+        examples=["active"],
+        description="Operational status (e.g. active, inactive, blocked)."
     )
     lat: float = Field(
         _DEFAULT_LAT,
