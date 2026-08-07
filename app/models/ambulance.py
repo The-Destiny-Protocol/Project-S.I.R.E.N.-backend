@@ -29,6 +29,13 @@ class Ambulance(Base):
     # Human-readable operator category, e.g. "GOVT", "PRIVATE", "NGO"
     operator_type: Mapped[str] = mapped_column(String(50), nullable=False)
 
+    # ── Vehicle & Driver Metadata ───────────────────────────────────────────────
+    vehicle_number: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    driver_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    contact_number: Mapped[str] = mapped_column(String(20), nullable=False)
+    equipment_level: Mapped[str] = mapped_column(String(20), nullable=False, default="BLS")
+    radio_channel_id: Mapped[str] = mapped_column(String(50), nullable=True)
+
     # Lifecycle state: "active" | "blocked" | "inactive"
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
 

@@ -100,6 +100,11 @@ class AmbulanceSummary(BaseModel):
     id: uuid.UUID
     status: str
     operator_type: str
+    vehicle_number: str
+    driver_name: str
+    contact_number: str
+    equipment_level: str
+    radio_channel_id: Optional[str]
 
     model_config = {"from_attributes": True}
 

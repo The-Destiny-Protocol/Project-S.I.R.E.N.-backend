@@ -23,6 +23,11 @@ class AmbulanceRegisterRequest(BaseModel):
             "examples": [
                 {
                     "operator_type": "GOVT",
+                    "vehicle_number": "OD-02-A-108",
+                    "driver_name": "Rajesh Mohanty",
+                    "contact_number": "+919876543210",
+                    "equipment_level": "BLS",
+                    "radio_channel_id": "CH-01",
                     "lat": _DEFAULT_LAT,
                     "lng": _DEFAULT_LNG,
                 }
@@ -36,6 +41,31 @@ class AmbulanceRegisterRequest(BaseModel):
         max_length=50,
         examples=["GOVT"],
         description="Operator category, e.g. GOVT, PRIVATE, NGO.",
+    )
+    vehicle_number: str = Field(
+        ...,
+        examples=["OD-02-A-108"],
+        description="Unique vehicle registration number."
+    )
+    driver_name: str = Field(
+        ...,
+        examples=["Rajesh Mohanty"],
+        description="Name of the ambulance driver."
+    )
+    contact_number: str = Field(
+        ...,
+        examples=["+919876543210"],
+        description="Contact number for the driver/vehicle."
+    )
+    equipment_level: str = Field(
+        "BLS",
+        examples=["BLS"],
+        description="Equipment level (e.g. ALS, BLS)."
+    )
+    radio_channel_id: Optional[str] = Field(
+        None,
+        examples=["CH-01"],
+        description="Assigned RoIP radio channel."
     )
     lat: float = Field(
         _DEFAULT_LAT,
@@ -67,6 +97,26 @@ class AmbulanceResponse(BaseModel):
         ...,
         description="Operator category, e.g. GOVT, PRIVATE, NGO.",
         examples=["GOVT"]
+    )
+    vehicle_number: str = Field(
+        ...,
+        description="Unique vehicle registration number."
+    )
+    driver_name: str = Field(
+        ...,
+        description="Name of the ambulance driver."
+    )
+    contact_number: str = Field(
+        ...,
+        description="Contact number for the driver/vehicle."
+    )
+    equipment_level: str = Field(
+        ...,
+        description="Equipment level (e.g. ALS, BLS)."
+    )
+    radio_channel_id: Optional[str] = Field(
+        None,
+        description="Assigned RoIP radio channel."
     )
     status: str = Field(
         ...,

@@ -52,6 +52,11 @@ def register_ambulance(
     ambulance = Ambulance(
         id=uuid.uuid4(),
         operator_type=body.operator_type,
+        vehicle_number=body.vehicle_number,
+        driver_name=body.driver_name,
+        contact_number=body.contact_number,
+        equipment_level=body.equipment_level,
+        radio_channel_id=body.radio_channel_id,
         status="active",
         location=from_shape(Point(body.lng, body.lat), srid=4326),
     )
@@ -94,6 +99,11 @@ def get_active_ambulances(
             AmbulanceResponse(
                 id=amb.id,
                 operator_type=amb.operator_type,
+                vehicle_number=amb.vehicle_number,
+                driver_name=amb.driver_name,
+                contact_number=amb.contact_number,
+                equipment_level=amb.equipment_level,
+                radio_channel_id=amb.radio_channel_id,
                 status=amb.status,
                 lat=pt.y,
                 lng=pt.x,

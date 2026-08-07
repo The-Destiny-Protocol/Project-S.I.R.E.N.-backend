@@ -41,6 +41,9 @@ def _synthesize_tts_file(message: str, output_path: str) -> None:
 async def generate_and_dispatch_audio(
     police_unit_code: str,
     ambulance_id: str,
+    vehicle_number: str,
+    driver_name: str,
+    contact_number: str,
     trigger_type: str,
     location_name: str = "an unknown location",
     radio_channel_id: str | None = None,
@@ -75,7 +78,7 @@ async def generate_and_dispatch_audio(
         f"URGENT. URGENT. URGENT. "
         f"Emergency alert for unit {police_unit_code} {channel_info}. "
         f"{trigger_label}. "
-        f"Ambulance ID {ambulance_id} is blocked near {location_name} and requires immediate corridor clearance. "
+        f"Driver {driver_name} with Ambulance {vehicle_number} is blocked near {location_name} and requires immediate corridor clearance. "
         f"Please respond. Over."
     )
 
@@ -105,6 +108,7 @@ async def generate_and_dispatch_audio(
                     "X-Police-Unit": police_unit_code,
                     "X-Ambulance-Id": ambulance_id,
                     "X-Trigger-Type": trigger_type,
+                    "X-Driver-Phone": contact_number,
                 },
             )
             response.raise_for_status()
