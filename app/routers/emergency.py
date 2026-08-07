@@ -22,12 +22,14 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from geoalchemy2.shape import from_shape
 from shapely.geometry import Point
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import RoleChecker
+from app.config import settings
 from app.database import get_db
 from app.models.ambulance import Ambulance
 from app.models.incident import EmergencyIncident
@@ -60,7 +62,7 @@ router = APIRouter(prefix="/emergency", tags=["Emergency Dispatch"])
         "Returns immediately — audio dispatch runs in the background."
     ),
 )
-def trigger_sos(
+async def trigger_sos(
     ambulance_id: str,
     body: SOSRequest,
     background_tasks: BackgroundTasks,
@@ -132,6 +134,26 @@ def trigger_sos(
 
     logger.info("📋  EmergencyIncident created | incident_id=%s", incident.id)
 
+    # ── 4.5 Reverse Geocoding (Mapbox) ────────────────────────────────────────
+    location_name = "an unknown location"
+    if settings.mapbox_access_token:
+        try:
+            url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{body.lng},{body.lat}.json"
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                res = await client.get(
+                    url,
+                    params={
+                        "access_token": settings.mapbox_access_token,
+                        "types": "neighborhood,locality,place"
+                    }
+                )
+                res.raise_for_status()
+                data = res.json()
+                if data.get("features"):
+                    location_name = data["features"][0]["text"]
+        except Exception as exc:
+            logger.warning("⚠️  Mapbox geocoding failed, falling back to unknown location: %s", exc)
+
     # ── 5. Queue background voice alert ───────────────────────────────────────
     if nearest_unit:
         background_tasks.add_task(
@@ -139,6 +161,7 @@ def trigger_sos(
             police_unit_code=nearest_unit.unit_code,
             ambulance_id=ambulance_id,
             trigger_type=body.trigger_type,
+            location_name=location_name,
             radio_channel_id=nearest_unit.radio_channel_id,
         )
         logger.info(

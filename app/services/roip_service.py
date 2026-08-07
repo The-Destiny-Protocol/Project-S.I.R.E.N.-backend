@@ -42,6 +42,7 @@ async def generate_and_dispatch_audio(
     police_unit_code: str,
     ambulance_id: str,
     trigger_type: str,
+    location_name: str = "an unknown location",
     radio_channel_id: str | None = None,
 ) -> None:
     """
@@ -74,7 +75,7 @@ async def generate_and_dispatch_audio(
         f"URGENT. URGENT. URGENT. "
         f"Emergency alert for unit {police_unit_code} {channel_info}. "
         f"{trigger_label}. "
-        f"Ambulance ID {ambulance_id} is blocked and requires immediate corridor clearance. "
+        f"Ambulance ID {ambulance_id} is blocked near {location_name} and requires immediate corridor clearance. "
         f"Please respond. Over."
     )
 
