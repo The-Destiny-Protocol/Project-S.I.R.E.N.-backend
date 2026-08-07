@@ -32,29 +32,34 @@ app/
 ├── api/
 │   ├── deps.py           # get_current_user(), RoleChecker (RBAC dependency)
 │   └── routers/
-│       └── auth.py       # POST /auth/login, POST /auth/register
+│       ├── auth.py       # POST /auth/login, POST /auth/register
+│       ├── map.py        # GET /map/ambulances, /map/police (PostGIS -> GeoJSON FeatureCollections)
+│       └── websockets.py # WS /ws/live-map (Real-time telemetry broadcast via ConnectionManager)
 │
 ├── models/               # SQLAlchemy 2.0 ORM mapped classes
 │   ├── ambulance.py      # Ambulance — UUID PK, status, PostGIS POINT, updated_at
 │   ├── police_unit.py    # PoliceUnit — UUID PK, unit_code, PostGIS POINT, updated_at
+│   ├── incident.py       # EmergencyIncident — UUID PK, trigger_source, status
 │   └── user.py           # User — UUID PK, username, hashed_password, role, is_active
 │
 ├── schemas/              # Pydantic V2 models for request validation and response serialization
-│   ├── ambulance.py      # AmbulanceRegisterRequest, AmbulanceResponse, AmbulanceRegisterResponse
-│   ├── police_unit.py    # PoliceUnitResponse, PoliceUnitRegisterRequest
-│   └── user.py           # UserCreate, UserResponse, Token, TokenData
 │
 ├── routers/              # REST route handlers
-│   ├── ambulance.py      # POST /register (Admin), GET /active (Admin|Dispatcher), POST /seed-police (Admin)
+│   ├── ambulance.py      # POST /register (Admin), GET /active (Admin|Dispatcher)
 │   ├── police.py         # GET /units (Admin|Dispatcher)
-│   └── corridor.py       # GET /status (Admin|Dispatcher)
+│   └── emergency.py      # POST /sos, GET /incidents/active, PATCH /resolve
 │
 ├── services/
-│   └── geospatial.py     # find_nearest_police_unit() — PostGIS ST_Distance, haversine helper
+│   ├── geospatial.py     # find_nearest_police_unit() — PostGIS ST_Distance
+│   ├── roip_service.py   # pyttsx3 offline TTS generation and HTTP dispatch to gateway
+│   └── ws_manager.py     # ConnectionManager for Live Map WS broadcast
 │
 └── mqtt/
     ├── client.py         # FastMQTT singleton, SSLContext for HiveMQ Cloud TLS
-    └── handlers.py       # on_connect, on_disconnect, on_message, telemetry→trigger pipeline
+    └── handlers.py       # on_message, telemetry→trigger pipeline + WS broadcast
+
+discord_gateway/
+└── discord_bot.py        # Standalone Discord Bot (Mock RoIP Gateway) on port 8001
 ```
 
 ---
@@ -135,30 +140,31 @@ Before upgrading any dependency, check for breaking changes in these areas.
 ## 6. Data Flow: Blocked Ambulance → Police Alert
 
 ```
-1. Ambulance IoT device publishes to:
+1. Ambulance IoT device or Edge Vision AI publishes to:
    sih/ambulance/telemetry/{ambulance_id}
    Payload: {"status": "blocked", "lat": 20.2960, "lng": 85.8245}
 
 2. handlers.py::handle_message() is invoked.
+   a. Telemetry is broadcast via WebSockets (Live Map) immediately.
 
 3. _handle_telemetry() runs:
-   a. Parses JSON payload.
-   b. Opens a DB session (SessionLocal).
-   c. Upserts the ambulance's location and status.
-   d. db.commit()
+   a. Upserts the ambulance's location and status in the DB.
+   b. db.commit()
 
-4. If status == "blocked":
+4. If status == "blocked" (or if POST /sos is hit directly):
    a. _trigger_nearest_police() calls find_nearest_police_unit(lat, lng, db)
-   b. geospatial.py runs:
-      ST_Distance(cast(PoliceUnit.location, Geography()), cast(query_point, Geography()))
-      ORDER BY distance ASC LIMIT 1
+   b. geospatial.py runs PostGIS ST_Distance query.
    c. Returns the nearest PoliceUnit ORM object.
+   d. Saves an EmergencyIncident record to track the event.
 
-5. Backend publishes to:
-   sih/police/trigger/{nearest_police_unit_id}
-   Payload: {"flash": true, "ambulance_id": "..."}
+5. Background TTS Task (roip_service.py) starts:
+   a. Synthesizes a voice alert using `pyttsx3` into a `.wav` file.
+   b. Dispatches the `.wav` file over HTTP POST to the Discord Mock Gateway (port 8001).
 
-6. Police unit's IoT device receives the alert and activates corridor clearance.
+6. Discord Gateway (discord_bot.py) receives payload:
+   a. Bot connects to the designated Discord Voice Channel.
+   b. Streams the `.wav` file using FFmpegPCMAudio.
+   c. Disconnects cleanly when finished.
 ```
 
 ---
