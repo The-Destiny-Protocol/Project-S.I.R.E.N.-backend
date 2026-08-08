@@ -24,7 +24,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 # Target RoIP gateway — the Discord bot's aiohttp server (port 8001).
-ROIP_GATEWAY_URL = "http://discord-gateway:8001/api/v1/emergency/mock-roip-gateway"
+ROIP_GATEWAY_URL = "http://127.0.0.1:8001/api/v1/emergency/mock-roip-gateway"
 
 
 def _synthesize_tts_file(message: str, output_path: str) -> None:
@@ -39,13 +39,14 @@ def _synthesize_tts_file(message: str, output_path: str) -> None:
 
 
 async def generate_and_dispatch_audio(
-    police_unit_code: str,
     ambulance_id: str,
     vehicle_number: str,
-    driver_name: str,
-    contact_number: str,
     trigger_type: str,
+    police_unit_code: str = "UNKNOWN",
+    driver_name: str = "Unknown",
+    contact_number: str = "Unknown",
     location_name: str = "an unknown location",
+    destination_name: str | None = None,
     radio_channel_id: str | None = None,
 ) -> None:
     """
@@ -67,20 +68,26 @@ async def generate_and_dispatch_audio(
         trigger_type,
     )
 
-    channel_info = f"on channel {radio_channel_id}" if radio_channel_id else ""
-    trigger_label = (
-        "DRIVER PANIC BUTTON ACTIVATED"
-        if trigger_type == "MANUAL_DRIVER_SOS"
-        else "AI VISION ANOMALY DETECTED -- AUTOMATIC SOS"
-    )
-
-    message = (
-        f"URGENT. URGENT. URGENT. "
-        f"Emergency alert for unit {police_unit_code} {channel_info}. "
-        f"{trigger_label}. "
-        f"Driver {driver_name} with Ambulance {vehicle_number} is blocked near {location_name} and requires immediate corridor clearance. "
-        f"Please respond. Over."
-    )
+    if trigger_type == "GREEN_CORRIDOR":
+        dest_phrase = f"en route to {destination_name}" if destination_name else "en route to its destination"
+        message = (
+            f"Traffic Control Alert. Green corridor preemption activated at intersection {location_name}. "
+            f"Approaching vehicle {vehicle_number}, {dest_phrase}. All cross-traffic please hold. Over."
+        )
+    else:
+        channel_info = f"on channel {radio_channel_id}" if radio_channel_id else ""
+        trigger_label = (
+            "DRIVER PANIC BUTTON ACTIVATED"
+            if trigger_type == "MANUAL_DRIVER_SOS"
+            else "AI VISION ANOMALY DETECTED -- AUTOMATIC SOS"
+        )
+        message = (
+            f"URGENT. URGENT. URGENT. "
+            f"Emergency alert for unit {police_unit_code} {channel_info}. "
+            f"{trigger_label}. "
+            f"Driver {driver_name} with Ambulance {vehicle_number} is blocked near {location_name} and requires immediate corridor clearance. "
+            f"Please respond. Over."
+        )
 
     tmp_path = os.path.join(tempfile.gettempdir(), f"roip_{uuid.uuid4().hex}.mp3")
     print(f"[RoIP] Synthesizing speech -> {tmp_path}", flush=True)

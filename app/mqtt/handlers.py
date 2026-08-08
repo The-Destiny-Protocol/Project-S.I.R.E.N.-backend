@@ -39,6 +39,7 @@ from app.models.hospital import Hospital
 from app.mqtt.client import mqtt
 from app.services.geospatial import find_nearest_police_unit
 from app.services.routing_service import calculate_route
+from app.services.roip_service import generate_and_dispatch_audio
 
 logger = logging.getLogger(__name__)
 
@@ -225,6 +226,10 @@ async def _handle_telemetry(ambulance_id: str, raw_payload: bytes) -> None:
             else:
                 nearby_signals = []
 
+            hospital_name = None
+            if ambulance.target_hospital_id:
+                hospital_name = db.query(Hospital.name).filter(Hospital.id == ambulance.target_hospital_id).scalar()
+
             for signal in nearby_signals:
                 # Publish Traffic Light Override
                 override_topic = f"sih/traffic/signals/{signal.id}/override"
@@ -239,7 +244,7 @@ async def _handle_telemetry(ambulance_id: str, raw_payload: bytes) -> None:
                     override_topic
                 )
 
-                # Publish RoIP Walkie-Talkie TTS Alert
+                # Publish RoIP Walkie-Talkie TTS Alert via MQTT
                 if ambulance.radio_channel_id:
                     roip_topic = f"sih/roip/channel/{ambulance.radio_channel_id}/broadcast"
                     roip_payload = json.dumps({
@@ -253,6 +258,21 @@ async def _handle_telemetry(ambulance_id: str, raw_payload: bytes) -> None:
                         "📻  RoIP TTS published → topic=%s", 
                         roip_topic
                     )
+                
+                # Generate and dispatch actual audio to Discord RoIP Gateway
+                asyncio.create_task(
+                    generate_and_dispatch_audio(
+                        police_unit_code="DISPATCH",
+                        ambulance_id=str(ambulance.id),
+                        vehicle_number=ambulance.vehicle_number,
+                        driver_name=ambulance.driver_name or "Unknown",
+                        contact_number=ambulance.contact_number or "Unknown",
+                        trigger_type="GREEN_CORRIDOR",
+                        location_name=signal.intersection_name,
+                        destination_name=hospital_name,
+                        radio_channel_id=ambulance.radio_channel_id
+                    )
+                )
 
     except Exception as exc:
         db.rollback()
