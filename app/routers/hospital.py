@@ -15,10 +15,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import RoleChecker
 from app.database import get_db
 from app.models.hospital import Hospital
-from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +31,6 @@ router = APIRouter(prefix="/hospitals", tags=["Hospitals"])
 )
 def get_hospitals(
     db: Session = Depends(get_db),
-    current_user: User = Depends(RoleChecker(["Admin", "Dispatcher"])),
 ) -> dict[str, Any]:
     """
     Fetch all hospitals and return as GeoJSON FeatureCollection.

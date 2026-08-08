@@ -108,17 +108,11 @@ async def handle_message(client, topic: str, payload: bytes, qos: int, propertie
     if len(topic_parts) == 4 and topic_parts[:3] == ["sih", "ambulance", "telemetry"]:
         ambulance_id = topic_parts[3]
 
-        # Parse payload once here so we can broadcast without re-decoding
+        # Parse payload once here to validate JSON structure early if needed
         try:
             payload_dict: dict = json.loads(payload.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError):
             payload_dict = {"raw": payload.decode("utf-8", errors="replace")}
-
-        # ── Broadcast to all connected WebSocket clients (Live Map) ───────────
-        from app.services.ws_manager import live_map_manager  # local import avoids circular deps
-        asyncio.create_task(
-            live_map_manager.broadcast({"topic": topic, "payload": payload_dict})
-        )
 
         await _handle_telemetry(ambulance_id, payload)
     else:
@@ -157,6 +151,20 @@ async def _handle_telemetry(ambulance_id: str, raw_payload: bytes) -> None:
         status,
         lat,
         lng,
+    )
+
+    # ── Broadcast to all connected WebSocket clients (Live Map) ───────────
+    from app.services.ws_manager import live_map_manager
+    asyncio.create_task(
+        live_map_manager.broadcast({
+            "topic": f"sih/ambulance/telemetry/{ambulance_id}",
+            "payload": {
+                "ambulance_id": ambulance_id,
+                "status": status,
+                "lat": lat,
+                "lng": lng
+            }
+        })
     )
 
     # ── 2. Persist location update ─────────────────────────────────────────────
@@ -243,6 +251,16 @@ async def _handle_telemetry(ambulance_id: str, raw_payload: bytes) -> None:
                     "🚦  Green Corridor Active! Override published → topic=%s", 
                     override_topic
                 )
+
+                # Broadcast signal override to WebSocket clients
+                override_event = {
+                    "type": "SIGNAL_OVERRIDE",
+                    "payload": {
+                        "signal_id": str(signal.id),
+                        "status": "GREEN"
+                    }
+                }
+                asyncio.create_task(live_map_manager.broadcast(override_event))
 
                 # Publish RoIP Walkie-Talkie TTS Alert via MQTT
                 if ambulance.radio_channel_id:
