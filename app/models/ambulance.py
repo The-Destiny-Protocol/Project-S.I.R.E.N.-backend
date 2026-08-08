@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 
 from geoalchemy2 import Geometry
-from sqlalchemy import DateTime, String
+from sqlalchemy import DateTime, String, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -42,6 +42,17 @@ class Ambulance(Base):
     # Last-known GPS position as a PostGIS POINT (longitude, latitude) in WGS-84
     location: Mapped[object] = mapped_column(
         Geometry(geometry_type="POINT", srid=4326),
+        nullable=True,
+    )
+
+    # ── Routing Data ────────────────────────────────────────────────────────────
+    target_hospital_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("hospitals.id"), nullable=True
+    )
+
+    # Active route path from Mapbox Directions as a LINESTRING
+    active_route_geom: Mapped[object] = mapped_column(
+        Geometry(geometry_type="LINESTRING", srid=4326),
         nullable=True,
     )
 

@@ -13,8 +13,9 @@ All MQTT topic callbacks are registered by importing app.mqtt.handlers
 
 import logging
 from contextlib import asynccontextmanager
+import asyncio
 
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
@@ -23,6 +24,7 @@ from app.mqtt.client import mqtt
 
 # Import handlers so @mqtt decorator side-effects are executed at import time.
 import app.mqtt.handlers  # noqa: F401
+from app.mqtt.handlers import flush_telemetry_to_db
 
 from app.routers import ambulance as ambulance_router
 from app.routers import corridor as corridor_router
@@ -47,6 +49,20 @@ async def lifespan(app: FastAPI):
     init_db()
     logger.info("🗄️   Database ready.")
 
+    # 1.5. Clear Ghost States
+    logger.info("🚦  Resetting all Traffic Signals to 'AUTO' state...")
+    from app.database import SessionLocal
+    from app.models.traffic import TrafficSignal
+    db = SessionLocal()
+    try:
+        db.query(TrafficSignal).update({TrafficSignal.status: "AUTO"})
+        db.commit()
+    except Exception as exc:
+        logger.error("Failed to reset traffic signals: %s", exc)
+        db.rollback()
+    finally:
+        db.close()
+
     # ── MQTT ───────────────────────────────────────────────────────────────────
     logger.info("📡  Initiating MQTT Connection to %s:%s …", settings.mqtt_broker_url, settings.mqtt_port)
     try:
@@ -58,9 +74,14 @@ async def lifespan(app: FastAPI):
             exc,
         )
 
+    # ── Background Tasks ───────────────────────────────────────────────────────
+    logger.info("🕒  Starting background task: flush_telemetry_to_db")
+    flush_task = asyncio.create_task(flush_telemetry_to_db())
+
     yield  # Application is running
 
-    logger.info("🛑  Shutting down. Closing MQTT Connection...")
+    logger.info("🛑  Shutting down. Cancelling background tasks...")
+    flush_task.cancel()
     await mqtt.mqtt_shutdown()
 
 
@@ -83,7 +104,8 @@ def create_app() -> FastAPI:
     # ── CORS ───────────────────────────────────────────────────────────────────
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],   # Tighten this in production
+        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -95,6 +117,8 @@ def create_app() -> FastAPI:
     from app.routers import emergency as emergency_router
     from app.routers import police as police_router
     from app.routers import traffic as traffic_router
+    from app.routers import routing as routing_router
+    from app.routers import hospital as hospital_router
 
     app.include_router(auth_router.router, prefix="/api/v1")
     app.include_router(ambulance_router.router, prefix="/api/v1")
@@ -104,6 +128,8 @@ def create_app() -> FastAPI:
     app.include_router(map_router.router, prefix="/api/v1")
     app.include_router(ws_router.router, prefix="/api/v1")
     app.include_router(traffic_router.router, prefix="/api/v1")
+    app.include_router(routing_router.router, prefix="/api/v1")
+    app.include_router(hospital_router.router, prefix="/api/v1")
 
 
 
@@ -111,6 +137,22 @@ def create_app() -> FastAPI:
     @app.get("/health", tags=["Health"])
     def health_check():
         return {"status": "ok", "version": settings.app_version}
+
+    # ── Dedicated Telemetry WebSocket (Bypasses all checks) ────────────────────
+    @app.websocket("/ws/telemetry")
+    async def telemetry_websocket(websocket: WebSocket):
+        from app.services.ws_manager import live_map_manager
+        await live_map_manager.connect(websocket)
+        logger.info("[WS] Legacy /ws/telemetry client connected: %s", websocket.client)
+        try:
+            while True:
+                data = await websocket.receive_text()
+        except WebSocketDisconnect:
+            live_map_manager.disconnect(websocket)
+            logger.info("[WS] /ws/telemetry client disconnected")
+        except Exception as exc:
+            logger.exception("[WS] Unexpected error for /ws/telemetry client: %s", exc)
+            live_map_manager.disconnect(websocket)
 
     return app
 

@@ -143,6 +143,10 @@ class AmbulanceResponse(BaseModel):
         None,
         description="Timestamp of the last telemetry update."
     )
+    route_geojson: Optional[dict] = Field(
+        None,
+        description="Active Mapbox route geometry as GeoJSON."
+    )
 
 
 class AmbulanceRegisterResponse(BaseModel):

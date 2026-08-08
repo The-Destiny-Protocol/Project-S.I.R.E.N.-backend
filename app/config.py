@@ -31,6 +31,7 @@ class Settings(BaseSettings):
 
     # ── Database ───────────────────────────────────────────────────────────────
     database_url: str = "postgresql://postgres:password@localhost:5432/sih_ambulance"
+    redis_url: str = "redis://localhost:6379"
 
     # ── MQTT (HiveMQ Cloud / Broker) ───────────────────────────────────────────
     mqtt_broker_url: str = "your-cluster.s1.eu.hivemq.cloud"

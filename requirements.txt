@@ -11,6 +11,7 @@ sqlalchemy==2.0.36        # 2.0.36 fixes Python 3.13 FastIntFlag incompatibility
 geoalchemy2==0.15.2
 psycopg2-binary          # unpinned — pip will pick the correct pre-built wheel
 shapely                  # required by geoalchemy2 shape helpers in handlers.py
+redis                    # Redis client for async write-behind cache
 
 # ── Pydantic / Settings ────────────────────────────────────────────────────────
 pydantic==2.10.6          # 2.10.x ships cp313-win_amd64 pre-built wheels
