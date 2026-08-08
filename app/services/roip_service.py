@@ -24,7 +24,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 # Target RoIP gateway — the Discord bot's aiohttp server (port 8001).
-ROIP_GATEWAY_URL = "http://127.0.0.1:8001/api/v1/emergency/mock-roip-gateway"
+ROIP_GATEWAY_URL = "http://discord-gateway:8001/api/v1/emergency/mock-roip-gateway"
 
 
 def _synthesize_tts_file(message: str, output_path: str) -> None:
