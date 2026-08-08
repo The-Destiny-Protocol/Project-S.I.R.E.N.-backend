@@ -88,3 +88,35 @@ async def dispatch_ambulance(
         "eta_seconds": duration,
         "route_geojson": route_geom
     }
+
+
+@router.post(
+    "/{ambulance_id}/arrive",
+    summary="Mark ambulance as arrived",
+    description="Resets the ambulance's active mission state and route to prevent false traffic preemptions.",
+)
+async def arrive_ambulance(
+    ambulance_id: str,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(RoleChecker(["Admin", "Dispatcher"])),
+) -> dict[str, Any]:
+    # 1. Fetch ambulance
+    ambulance = db.get(Ambulance, ambulance_id)
+    if not ambulance:
+        raise HTTPException(status_code=404, detail="Ambulance not found")
+
+    # 2. Reset mission state
+    try:
+        ambulance.status = "AVAILABLE"
+        ambulance.target_hospital_id = None
+        ambulance.active_route_geom = None
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.exception("❌ DB error resetting ambulance mission: %s", exc)
+        raise HTTPException(status_code=500, detail="Database error while resetting ambulance state")
+
+    logger.info("✅ Ambulance %s arrived and reset to AVAILABLE", ambulance_id)
+
+    return {"message": "Mission accomplished. Ambulance status reset to AVAILABLE."}
+

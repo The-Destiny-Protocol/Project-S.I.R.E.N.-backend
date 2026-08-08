@@ -26,8 +26,8 @@ import logging
 from datetime import datetime, timezone
 import asyncio
 
-from geoalchemy2.shape import from_shape
-from shapely.geometry import Point
+from geoalchemy2.shape import from_shape, to_shape
+from shapely.geometry import Point, shape
 from sqlalchemy.orm import Session
 from sqlalchemy import func, cast
 from geoalchemy2.types import Geography
@@ -35,8 +35,10 @@ from geoalchemy2.types import Geography
 from app.database import SessionLocal
 from app.models.ambulance import Ambulance
 from app.models.traffic import TrafficSignal
+from app.models.hospital import Hospital
 from app.mqtt.client import mqtt
 from app.services.geospatial import find_nearest_police_unit
+from app.services.routing_service import calculate_route
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +184,31 @@ async def _handle_telemetry(ambulance_id: str, raw_payload: bytes) -> None:
                 # Construct WKT string for the live point so ST_GeogFromText can parse it natively
                 ambulance_point_wkt = f"SRID=4326;POINT({lng} {lat})"
                 
+                # Auto-Rerouting (Route Deviation Check)
+                deviation_dist = db.query(
+                    func.ST_Distance(
+                        cast(func.ST_GeogFromText(ambulance_point_wkt), Geography),
+                        cast(func.ST_GeomFromEWKB(ambulance.active_route_geom), Geography)
+                    )
+                ).scalar()
+
+                if deviation_dist and deviation_dist > 50:
+                    logger.warning("🗺️  Ambulance %s deviated from route by %.1fm! Recalculating...", ambulance_id, deviation_dist)
+                    hospital = db.get(Hospital, ambulance.target_hospital_id)
+                    if hospital:
+                        hosp_pt = to_shape(hospital.geom)
+                        route_geom, _ = await calculate_route(
+                            origin_lat=lat,
+                            origin_lng=lng,
+                            dest_lat=hosp_pt.y,
+                            dest_lng=hosp_pt.x
+                        )
+                        if route_geom:
+                            ambulance.active_route_geom = from_shape(shape(route_geom), srid=4326)
+                            db.commit()
+                            logger.info("🗺️  Successfully auto-rerouted ambulance %s to %s", ambulance_id, hospital.name)
+
+                
                 # Preempt if signal is within 500m of the ambulance AND within 20m of the route
                 nearby_signals = db.query(TrafficSignal).filter(
                     func.ST_DWithin(
@@ -199,6 +226,7 @@ async def _handle_telemetry(ambulance_id: str, raw_payload: bytes) -> None:
                 nearby_signals = []
 
             for signal in nearby_signals:
+                # Publish Traffic Light Override
                 override_topic = f"sih/traffic/signals/{signal.id}/override"
                 override_payload = json.dumps({
                     "status": "GREEN", 
@@ -210,6 +238,21 @@ async def _handle_telemetry(ambulance_id: str, raw_payload: bytes) -> None:
                     "🚦  Green Corridor Active! Override published → topic=%s", 
                     override_topic
                 )
+
+                # Publish RoIP Walkie-Talkie TTS Alert
+                if ambulance.radio_channel_id:
+                    roip_topic = f"sih/roip/channel/{ambulance.radio_channel_id}/broadcast"
+                    roip_payload = json.dumps({
+                        "action": "play_tts",
+                        "text": f"Alert: Emergency vehicle {ambulance.vehicle_number} is approaching {signal.intersection_name}. Please clear the intersection immediately.",
+                        "priority": "HIGH",
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    })
+                    mqtt.publish(roip_topic, roip_payload, qos=1)
+                    logger.info(
+                        "📻  RoIP TTS published → topic=%s", 
+                        roip_topic
+                    )
 
     except Exception as exc:
         db.rollback()

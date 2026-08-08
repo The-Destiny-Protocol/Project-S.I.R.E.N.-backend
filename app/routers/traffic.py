@@ -24,31 +24,44 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/traffic-signals", tags=["Traffic Signals"])
 
 
+import json
+from typing import Any
+from sqlalchemy import func, select
+
 @router.get(
     "",
-    response_model=list[TrafficSignalResponse],
-    summary="Get all traffic signals",
-    description="Retrieve all traffic signals with their current geographic coordinates.",
+    response_model=dict[str, Any],
+    summary="Get all traffic signals as GeoJSON",
+    description="Retrieve all traffic signals formatted as a GeoJSON FeatureCollection.",
 )
 def get_traffic_signals(
     db: Session = Depends(get_db),
     current_user: User = Depends(RoleChecker(["Admin", "Dispatcher"])),
-) -> list[TrafficSignalResponse]:
+) -> dict[str, Any]:
     """
-    Fetch all traffic signals from the database.
+    Fetch all traffic signals and return as GeoJSON FeatureCollection.
     """
-    signals = db.query(TrafficSignal).all()
-    results = []
-    for sig in signals:
-        pt = to_shape(sig.geom)
-        results.append(
-            TrafficSignalResponse(
-                id=sig.id,
-                intersection_name=sig.intersection_name,
-                status=sig.status,
-                lat=pt.y,
-                lng=pt.x,
-                updated_at=sig.updated_at,
-            )
-        )
-    return results
+    stmt = select(
+        TrafficSignal.id,
+        TrafficSignal.intersection_name,
+        TrafficSignal.status,
+        func.ST_AsGeoJSON(TrafficSignal.geom).label("geojson")
+    )
+    rows = db.execute(stmt).all()
+
+    features = []
+    for row in rows:
+        features.append({
+            "type": "Feature",
+            "geometry": json.loads(row.geojson),
+            "properties": {
+                "id": str(row.id),
+                "name": row.intersection_name,
+                "status": row.status
+            }
+        })
+
+    return {
+        "type": "FeatureCollection",
+        "features": features
+    }
