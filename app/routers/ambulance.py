@@ -15,6 +15,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from geoalchemy2.shape import from_shape, to_shape
 from shapely.geometry import Point
 from sqlalchemy.orm import Session
+from sqlalchemy import func
+import json
 
 from app.api.deps import RoleChecker
 from app.database import get_db
@@ -91,10 +93,16 @@ def get_active_ambulances(
     Fetch all active ambulances from the database.
     Standard frontend and simulation clients can access this.
     """
-    ambulances = db.query(Ambulance).filter(Ambulance.status == "active").all()
+    ambulances = db.query(
+        Ambulance, 
+        func.ST_AsGeoJSON(Ambulance.active_route_geom).label("route_geojson")
+    ).filter(Ambulance.status == "active").all()
+    
     results = []
-    for amb in ambulances:
+    for amb, route_geojson_str in ambulances:
         pt = to_shape(amb.location)
+        route_geojson = json.loads(route_geojson_str) if route_geojson_str else None
+        
         results.append(
             AmbulanceResponse(
                 id=amb.id,
@@ -108,6 +116,7 @@ def get_active_ambulances(
                 lat=pt.y,
                 lng=pt.x,
                 updated_at=amb.updated_at,
+                route_geojson=route_geojson,
             )
         )
     return results

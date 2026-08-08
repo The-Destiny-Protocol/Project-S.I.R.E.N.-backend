@@ -23,8 +23,10 @@ Flow for a "blocked" event:
 
 import json
 import logging
+import math
 from datetime import datetime, timezone
 import asyncio
+import redis.asyncio as aioredis
 
 from geoalchemy2.shape import from_shape, to_shape
 from shapely.geometry import Point, shape
@@ -40,14 +42,51 @@ from app.mqtt.client import mqtt
 from app.services.geospatial import find_nearest_police_unit
 from app.services.routing_service import calculate_route
 from app.services.roip_service import generate_and_dispatch_audio
+from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+# ── Redis Client ───────────────────────────────────────────────────────────────
+redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
 
 # ── Topic constants ────────────────────────────────────────────────────────────
 # '+' is the single-level wildcard — matches exactly one topic segment (the ambulance_id).
 # '#' would also work at the end but '+' is more precise and avoids matching sub-levels.
 TELEMETRY_TOPIC = "sih/ambulance/telemetry/+"
 TRIGGER_TOPIC_TEMPLATE = "sih/police/trigger/{police_id}"
+
+# ── Global Cache ───────────────────────────────────────────────────────────────
+CACHED_SIGNALS = []
+SIGNALS_LOADED = False
+
+def load_traffic_signals():
+    global CACHED_SIGNALS, SIGNALS_LOADED
+    if SIGNALS_LOADED:
+        return
+    db = SessionLocal()
+    try:
+        signals = db.query(TrafficSignal).all()
+        CACHED_SIGNALS = []
+        for s in signals:
+            pt = to_shape(s.geom)
+            CACHED_SIGNALS.append({
+                'id': str(s.id),
+                'lat': pt.y,
+                'lng': pt.x
+            })
+        SIGNALS_LOADED = True
+        logger.info("🚦 Cached %d traffic signals for fast-path preemption.", len(CACHED_SIGNALS))
+    finally:
+        db.close()
+
+def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculate the great circle distance in kilometers between two points on the earth."""
+    R = 6371.0 # Radius of earth in km
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
 
 
 # ── Connection callback ────────────────────────────────────────────────────────
@@ -70,6 +109,10 @@ def handle_connect(client, flags, rc, properties):
             rc_value,
             TELEMETRY_TOPIC,
         )
+        
+        # Load traffic signals into memory for fast-path preemption
+        load_traffic_signals()
+        
         # Subscribe inside on_connect so it auto-resubscribes on reconnection
         client.subscribe(TELEMETRY_TOPIC, qos=1)
     else:
@@ -153,7 +196,10 @@ async def _handle_telemetry(ambulance_id: str, raw_payload: bytes) -> None:
         lng,
     )
 
-    # ── Broadcast to all connected WebSocket clients (Live Map) ───────────
+    # ── 1. Store in Redis ───────────────────────────────────────────────────────
+    await redis_client.hset("telemetry_buffer", ambulance_id, json.dumps(data))
+
+    # ── 2. Broadcast to all connected WebSocket clients (Live Map) ───────────
     from app.services.ws_manager import live_map_manager
     asyncio.create_task(
         live_map_manager.broadcast({
@@ -167,136 +213,152 @@ async def _handle_telemetry(ambulance_id: str, raw_payload: bytes) -> None:
         })
     )
 
-    # ── 2. Persist location update ─────────────────────────────────────────────
-    db: Session = SessionLocal()
-    try:
-        ambulance: Ambulance | None = db.get(Ambulance, ambulance_id)
-        if ambulance is None:
-            logger.warning(
-                "⚠️   Telemetry received for unknown ambulance_id=%s. Skipping DB update.",
-                ambulance_id,
-            )
-            # We still proceed with the blocked logic if needed, but cannot update DB.
-        else:
-            ambulance.status = status
-            ambulance.location = from_shape(Point(lng, lat), srid=4326)
-            ambulance.updated_at = datetime.now(timezone.utc)
-            db.commit()
-
-        # ── 3. Trigger nearest police unit if blocked ──────────────────────────
-        if status.lower() == "blocked":
-            await _trigger_nearest_police(ambulance_id, lat, lng, db)
-            
-        # ── 4. Automated Traffic Light Preemption (Route-Aware) ──────────────
-        if status.lower() in ["active", "dispatched", "blocked"]:
-            if ambulance.active_route_geom is not None:
-                # Construct WKT string for the live point so ST_GeogFromText can parse it natively
-                ambulance_point_wkt = f"SRID=4326;POINT({lng} {lat})"
-                
-                # Auto-Rerouting (Route Deviation Check)
-                deviation_dist = db.query(
-                    func.ST_Distance(
-                        cast(func.ST_GeogFromText(ambulance_point_wkt), Geography),
-                        cast(func.ST_GeomFromEWKB(ambulance.active_route_geom), Geography)
-                    )
-                ).scalar()
-
-                if deviation_dist and deviation_dist > 50:
-                    logger.warning("🗺️  Ambulance %s deviated from route by %.1fm! Recalculating...", ambulance_id, deviation_dist)
-                    hospital = db.get(Hospital, ambulance.target_hospital_id)
-                    if hospital:
-                        hosp_pt = to_shape(hospital.geom)
-                        route_geom, _ = await calculate_route(
-                            origin_lat=lat,
-                            origin_lng=lng,
-                            dest_lat=hosp_pt.y,
-                            dest_lng=hosp_pt.x
-                        )
-                        if route_geom:
-                            ambulance.active_route_geom = from_shape(shape(route_geom), srid=4326)
-                            db.commit()
-                            logger.info("🗺️  Successfully auto-rerouted ambulance %s to %s", ambulance_id, hospital.name)
-
-                
-                # Preempt if signal is within 500m of the ambulance AND within 20m of the route
-                nearby_signals = db.query(TrafficSignal).filter(
-                    func.ST_DWithin(
-                        cast(TrafficSignal.geom, Geography),
-                        func.ST_GeogFromText(ambulance_point_wkt),
-                        500
-                    ),
-                    func.ST_DWithin(
-                        cast(TrafficSignal.geom, Geography),
-                        cast(func.ST_GeomFromEWKB(ambulance.active_route_geom), Geography),
-                        20
-                    )
-                ).all()
-            else:
-                nearby_signals = []
-
-            hospital_name = None
-            if ambulance.target_hospital_id:
-                hospital_name = db.query(Hospital.name).filter(Hospital.id == ambulance.target_hospital_id).scalar()
-
-            for signal in nearby_signals:
-                # Publish Traffic Light Override
-                override_topic = f"sih/traffic/signals/{signal.id}/override"
+    # ── 3. Fast-Path Preemption ────────────────────────────────────────────────
+    if status.lower() in ["active", "dispatched", "blocked"]:
+        for signal in CACHED_SIGNALS:
+            dist = haversine_distance(lat, lng, signal['lat'], signal['lng'])
+            if dist <= 0.5: # 500 meters
+                override_topic = f"sih/traffic/signals/{signal['id']}/override"
                 override_payload = json.dumps({
                     "status": "GREEN", 
                     "ambulance_id": ambulance_id, 
                     "timestamp": datetime.now(timezone.utc).isoformat()
                 })
                 mqtt.publish(override_topic, override_payload, qos=1)
-                logger.info(
-                    "🚦  Green Corridor Active! Override published → topic=%s", 
-                    override_topic
-                )
+                
+                # Only log debug to avoid spamming the logs on every 1-second telemetry ping
+                logger.debug("⚡ Fast-Path Preemption! Override published → topic=%s", override_topic)
 
-                # Broadcast signal override to WebSocket clients
                 override_event = {
                     "type": "SIGNAL_OVERRIDE",
                     "payload": {
-                        "signal_id": str(signal.id),
+                        "signal_id": signal['id'],
                         "status": "GREEN"
                     }
                 }
                 asyncio.create_task(live_map_manager.broadcast(override_event))
 
-                # Publish RoIP Walkie-Talkie TTS Alert via MQTT
-                if ambulance.radio_channel_id:
-                    roip_topic = f"sih/roip/channel/{ambulance.radio_channel_id}/broadcast"
-                    roip_payload = json.dumps({
-                        "action": "play_tts",
-                        "text": f"Alert: Emergency vehicle {ambulance.vehicle_number} is approaching {signal.intersection_name}. Please clear the intersection immediately.",
-                        "priority": "HIGH",
-                        "timestamp": datetime.now(timezone.utc).isoformat()
-                    })
-                    mqtt.publish(roip_topic, roip_payload, qos=1)
-                    logger.info(
-                        "📻  RoIP TTS published → topic=%s", 
-                        roip_topic
-                    )
-                
-                # Generate and dispatch actual audio to Discord RoIP Gateway
-                asyncio.create_task(
-                    generate_and_dispatch_audio(
-                        police_unit_code="DISPATCH",
-                        ambulance_id=str(ambulance.id),
-                        vehicle_number=ambulance.vehicle_number,
-                        driver_name=ambulance.driver_name or "Unknown",
-                        contact_number=ambulance.contact_number or "Unknown",
-                        trigger_type="GREEN_CORRIDOR",
-                        location_name=signal.intersection_name,
-                        destination_name=hospital_name,
-                        radio_channel_id=ambulance.radio_channel_id
-                    )
-                )
 
-    except Exception as exc:
-        db.rollback()
-        logger.exception("❌  DB error while processing telemetry: %s", exc)
-    finally:
-        db.close()
+async def flush_telemetry_to_db() -> None:
+    """
+    Background task to flush telemetry buffer from Redis to PostgreSQL every 5 seconds.
+    Solves EMAXCONNSESSION by batching updates.
+    """
+    while True:
+        await asyncio.sleep(5)
+        try:
+            async with redis_client.pipeline(transaction=True) as pipe:
+                pipe.hgetall("telemetry_buffer")
+                pipe.delete("telemetry_buffer")
+                results = await pipe.execute()
+            
+            buffer = results[0]
+            if not buffer:
+                continue
+
+            db: Session = SessionLocal()
+            try:
+                for ambulance_id, payload_str in buffer.items():
+                    data = json.loads(payload_str)
+                    status = data["status"]
+                    lat = float(data["lat"])
+                    lng = float(data["lng"])
+
+                    ambulance: Ambulance | None = db.get(Ambulance, ambulance_id)
+                    if ambulance is None:
+                        logger.warning("⚠️   Telemetry received for unknown ambulance_id=%s. Skipping DB update.", ambulance_id)
+                        continue
+                    
+                    ambulance.status = status
+                    ambulance.location = from_shape(Point(lng, lat), srid=4326)
+                    ambulance.updated_at = datetime.now(timezone.utc)
+
+                    # ── Trigger nearest police unit if blocked ──────────────────────────
+                    if status.lower() == "blocked":
+                        await _trigger_nearest_police(ambulance_id, lat, lng, db)
+                        
+                    # ── Automated Traffic Light Preemption (Route-Aware) ──────────────
+                    if status.lower() in ["active", "dispatched", "blocked"]:
+                        if ambulance.active_route_geom is not None:
+                            ambulance_point_wkt = f"SRID=4326;POINT({lng} {lat})"
+                            
+                            # Auto-Rerouting
+                            deviation_dist = db.query(
+                                func.ST_Distance(
+                                    cast(func.ST_GeogFromText(ambulance_point_wkt), Geography),
+                                    cast(func.ST_GeomFromEWKB(ambulance.active_route_geom), Geography)
+                                )
+                            ).scalar()
+
+                            if deviation_dist and deviation_dist > 50:
+                                logger.warning("🗺️  Ambulance %s deviated from route by %.1fm! Recalculating...", ambulance_id, deviation_dist)
+                                hospital = db.get(Hospital, ambulance.target_hospital_id)
+                                if hospital:
+                                    hosp_pt = to_shape(hospital.geom)
+                                    route_geom, _ = await calculate_route(
+                                        origin_lat=lat,
+                                        origin_lng=lng,
+                                        dest_lat=hosp_pt.y,
+                                        dest_lng=hosp_pt.x
+                                    )
+                                    if route_geom:
+                                        ambulance.active_route_geom = from_shape(shape(route_geom), srid=4326)
+                                        logger.info("🗺️  Successfully auto-rerouted ambulance %s to %s", ambulance_id, hospital.name)
+
+                            nearby_signals = db.query(TrafficSignal).filter(
+                                func.ST_DWithin(
+                                    cast(TrafficSignal.geom, Geography),
+                                    func.ST_GeogFromText(ambulance_point_wkt),
+                                    500
+                                ),
+                                func.ST_DWithin(
+                                    cast(TrafficSignal.geom, Geography),
+                                    cast(func.ST_GeomFromEWKB(ambulance.active_route_geom), Geography),
+                                    20
+                                )
+                            ).all()
+                        else:
+                            nearby_signals = []
+
+                        hospital_name = None
+                        if ambulance.target_hospital_id:
+                            hospital_name = db.query(Hospital.name).filter(Hospital.id == ambulance.target_hospital_id).scalar()
+
+                        for signal in nearby_signals:
+                            if ambulance.radio_channel_id:
+                                roip_topic = f"sih/roip/channel/{ambulance.radio_channel_id}/broadcast"
+                                roip_payload = json.dumps({
+                                    "action": "play_tts",
+                                    "text": f"Alert: Emergency vehicle {ambulance.vehicle_number} is approaching {signal.intersection_name}. Please clear the intersection immediately.",
+                                    "priority": "HIGH",
+                                    "timestamp": datetime.now(timezone.utc).isoformat()
+                                })
+                                mqtt.publish(roip_topic, roip_payload, qos=1)
+                                logger.info("📻  RoIP TTS published → topic=%s", roip_topic)
+                            
+                            asyncio.create_task(
+                                generate_and_dispatch_audio(
+                                    police_unit_code="DISPATCH",
+                                    ambulance_id=str(ambulance.id),
+                                    vehicle_number=ambulance.vehicle_number,
+                                    driver_name=ambulance.driver_name or "Unknown",
+                                    contact_number=ambulance.contact_number or "Unknown",
+                                    trigger_type="GREEN_CORRIDOR",
+                                    location_name=signal.intersection_name,
+                                    destination_name=hospital_name,
+                                    radio_channel_id=ambulance.radio_channel_id
+                                )
+                            )
+                
+                db.commit()
+            except Exception as exc:
+                db.rollback()
+                logger.exception("❌  DB error during telemetry flush: %s", exc)
+            finally:
+                db.close()
+        
+        except Exception as exc:
+            logger.exception("❌  Redis error during telemetry flush: %s", exc)
 
 
 async def _trigger_nearest_police(

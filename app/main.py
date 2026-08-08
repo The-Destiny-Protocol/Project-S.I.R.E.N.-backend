@@ -13,6 +13,7 @@ All MQTT topic callbacks are registered by importing app.mqtt.handlers
 
 import logging
 from contextlib import asynccontextmanager
+import asyncio
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,6 +24,7 @@ from app.mqtt.client import mqtt
 
 # Import handlers so @mqtt decorator side-effects are executed at import time.
 import app.mqtt.handlers  # noqa: F401
+from app.mqtt.handlers import flush_telemetry_to_db
 
 from app.routers import ambulance as ambulance_router
 from app.routers import corridor as corridor_router
@@ -58,9 +60,14 @@ async def lifespan(app: FastAPI):
             exc,
         )
 
+    # ── Background Tasks ───────────────────────────────────────────────────────
+    logger.info("🕒  Starting background task: flush_telemetry_to_db")
+    flush_task = asyncio.create_task(flush_telemetry_to_db())
+
     yield  # Application is running
 
-    logger.info("🛑  Shutting down. Closing MQTT Connection...")
+    logger.info("🛑  Shutting down. Cancelling background tasks...")
+    flush_task.cancel()
     await mqtt.mqtt_shutdown()
 
 
