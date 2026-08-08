@@ -176,17 +176,27 @@ async def _handle_telemetry(ambulance_id: str, raw_payload: bytes) -> None:
         if status.lower() == "blocked":
             await _trigger_nearest_police(ambulance_id, lat, lng, db)
             
-        # ── 4. Automated Traffic Light Preemption (Green Corridor) ─────────────
+        # ── 4. Automated Traffic Light Preemption (Route-Aware) ──────────────
         if status.lower() in ["active", "dispatched", "blocked"]:
-            ambulance_point = from_shape(Point(lng, lat), srid=4326)
-            
-            nearby_signals = db.query(TrafficSignal).filter(
-                func.ST_DWithin(
-                    cast(TrafficSignal.geom, Geography),
-                    cast(ambulance_point, Geography),
-                    500
-                )
-            ).all()
+            if ambulance.active_route_geom is not None:
+                # Construct WKT string for the live point so ST_GeogFromText can parse it natively
+                ambulance_point_wkt = f"SRID=4326;POINT({lng} {lat})"
+                
+                # Preempt if signal is within 500m of the ambulance AND within 20m of the route
+                nearby_signals = db.query(TrafficSignal).filter(
+                    func.ST_DWithin(
+                        cast(TrafficSignal.geom, Geography),
+                        func.ST_GeogFromText(ambulance_point_wkt),
+                        500
+                    ),
+                    func.ST_DWithin(
+                        cast(TrafficSignal.geom, Geography),
+                        cast(func.ST_GeomFromEWKB(ambulance.active_route_geom), Geography),
+                        20
+                    )
+                ).all()
+            else:
+                nearby_signals = []
 
             for signal in nearby_signals:
                 override_topic = f"sih/traffic/signals/{signal.id}/override"
