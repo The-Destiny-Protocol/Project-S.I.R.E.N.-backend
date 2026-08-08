@@ -29,9 +29,12 @@ import asyncio
 from geoalchemy2.shape import from_shape
 from shapely.geometry import Point
 from sqlalchemy.orm import Session
+from sqlalchemy import func, cast
+from geoalchemy2.types import Geography
 
 from app.database import SessionLocal
 from app.models.ambulance import Ambulance
+from app.models.traffic import TrafficSignal
 from app.mqtt.client import mqtt
 from app.services.geospatial import find_nearest_police_unit
 
@@ -172,6 +175,31 @@ async def _handle_telemetry(ambulance_id: str, raw_payload: bytes) -> None:
         # ── 3. Trigger nearest police unit if blocked ──────────────────────────
         if status.lower() == "blocked":
             await _trigger_nearest_police(ambulance_id, lat, lng, db)
+            
+        # ── 4. Automated Traffic Light Preemption (Green Corridor) ─────────────
+        if status.lower() in ["active", "dispatched", "blocked"]:
+            ambulance_point = from_shape(Point(lng, lat), srid=4326)
+            
+            nearby_signals = db.query(TrafficSignal).filter(
+                func.ST_DWithin(
+                    cast(TrafficSignal.geom, Geography),
+                    cast(ambulance_point, Geography),
+                    500
+                )
+            ).all()
+
+            for signal in nearby_signals:
+                override_topic = f"sih/traffic/signals/{signal.id}/override"
+                override_payload = json.dumps({
+                    "status": "GREEN", 
+                    "ambulance_id": ambulance_id, 
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                })
+                mqtt.publish(override_topic, override_payload, qos=1)
+                logger.info(
+                    "🚦  Green Corridor Active! Override published → topic=%s", 
+                    override_topic
+                )
 
     except Exception as exc:
         db.rollback()

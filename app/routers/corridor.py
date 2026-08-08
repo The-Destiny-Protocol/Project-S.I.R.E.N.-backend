@@ -69,6 +69,9 @@ def get_corridor_status(
             {
                 "id": str(amb.id),
                 "operator_type": amb.operator_type,
+                "vehicle_number": amb.vehicle_number,
+                "driver_name": amb.driver_name,
+                "contact_number": amb.contact_number,
                 "status": amb.status,
                 "lat": lat,
                 "lng": lng,

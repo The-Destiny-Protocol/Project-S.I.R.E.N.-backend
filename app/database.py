@@ -81,6 +81,7 @@ def init_db() -> None:
         from app.models import ambulance, police_unit  # noqa: F401
         from app.models.incident import EmergencyIncident  # noqa: F401
         from app.models.user import User  # noqa: F401
+        from app.models.traffic import TrafficSignal  # noqa: F401
 
         Base.metadata.create_all(bind=engine)
         _log.info("Database tables verified / created successfully.")

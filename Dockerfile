@@ -20,7 +20,7 @@ RUN apt-get update \
     ffmpeg \
     libpq-dev \
     gcc \
-    espeak \
+    espeak-ng libespeak-ng1 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
