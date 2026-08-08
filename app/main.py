@@ -49,6 +49,20 @@ async def lifespan(app: FastAPI):
     init_db()
     logger.info("🗄️   Database ready.")
 
+    # 1.5. Clear Ghost States
+    logger.info("🚦  Resetting all Traffic Signals to 'AUTO' state...")
+    from app.database import SessionLocal
+    from app.models.traffic import TrafficSignal
+    db = SessionLocal()
+    try:
+        db.query(TrafficSignal).update({TrafficSignal.status: "AUTO"})
+        db.commit()
+    except Exception as exc:
+        logger.error("Failed to reset traffic signals: %s", exc)
+        db.rollback()
+    finally:
+        db.close()
+
     # ── MQTT ───────────────────────────────────────────────────────────────────
     logger.info("📡  Initiating MQTT Connection to %s:%s …", settings.mqtt_broker_url, settings.mqtt_port)
     try:

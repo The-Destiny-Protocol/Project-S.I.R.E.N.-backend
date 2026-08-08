@@ -16,7 +16,7 @@ AMBULANCE_ID = "aa9f1cf4-5ab6-4a4b-bd90-98e7ae288ed7"
 # --- API Configuration ---
 BACKEND_URL = "http://127.0.0.1:8000/api/v1/ambulances/active" # Or /ambulances/active based on your router
 # Paste your active JWT token from your React dashboard's Local Storage here!
-JWT_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3ODYxOTg5ODgsInN1YiI6InJvaGl0In0.wsqRLSBiJE2ezy1bFe9NNQin18ALTFDGwsJ5qgUcYdQ"
+JWT_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3ODYyMDExOTgsInN1YiI6InJvaGl0In0.gTi2p9FDzk9d33EDSpxa0OL7ZO4YhgF4ZNBy3msYm5M"
 
 def fetch_real_route():
     print(f"🌐 Requesting real route geometry for {AMBULANCE_ID} from backend...")
@@ -95,8 +95,9 @@ def run_simulation():
                 }
                 
                 topic = f"sih/ambulance/telemetry/{AMBULANCE_ID}"
-                client.publish(topic, json.dumps(payload))
-                print(f"📡 Published telemetry -> Lat: {lat:.4f}, Lng: {lng:.4f}")
+                client.publish(f"sih/ambulance/telemetry/{AMBULANCE_ID}", json.dumps(payload))
+                
+                # print(f"📡 Published telemetry -> Lat: {lat:.4f}, Lng: {lng:.4f}")
                 
                 time.sleep(1)  # Send update every 1 second
             

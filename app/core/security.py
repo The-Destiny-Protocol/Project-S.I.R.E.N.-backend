@@ -26,7 +26,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
-def create_access_token(subject: str | Any, expires_delta: timedelta | None = None) -> str:
+def create_access_token(subject: str | Any, role: str | None = None, expires_delta: timedelta | None = None) -> str:
     """
     Generate a JWT access token.
     The 'sub' claim will contain the user's UUID or username.
@@ -37,6 +37,9 @@ def create_access_token(subject: str | Any, expires_delta: timedelta | None = No
         expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
     
     to_encode = {"exp": expire, "sub": str(subject)}
+    if role:
+        to_encode["role"] = role
+        
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
     
     return encoded_jwt

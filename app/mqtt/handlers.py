@@ -58,6 +58,8 @@ TRIGGER_TOPIC_TEMPLATE = "sih/police/trigger/{police_id}"
 # ── Global Cache ───────────────────────────────────────────────────────────────
 CACHED_SIGNALS = []
 SIGNALS_LOADED = False
+ACTIVE_OVERRIDES = set()
+PREVIOUS_LOCATIONS = {}
 
 def load_traffic_signals():
     global CACHED_SIGNALS, SIGNALS_LOADED
@@ -71,6 +73,7 @@ def load_traffic_signals():
             pt = to_shape(s.geom)
             CACHED_SIGNALS.append({
                 'id': str(s.id),
+                'name': s.intersection_name,
                 'lat': pt.y,
                 'lng': pt.x
             })
@@ -87,6 +90,23 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
+
+def calculate_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculate the initial bearing from point 1 to point 2."""
+    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+    dlon = lon2 - lon1
+    x = math.sin(dlon) * math.cos(lat2)
+    y = math.cos(lat1) * math.sin(lat2) - (math.sin(lat1) * math.cos(lat2) * math.cos(dlon))
+    initial_bearing = math.atan2(x, y)
+    initial_bearing = math.degrees(initial_bearing)
+    return (initial_bearing + 360) % 360
+
+def is_in_front(vehicle_heading: float, bearing_to_signal: float, fov: float = 90) -> bool:
+    """Check if the signal is within the forward Field of View (FOV)."""
+    diff = abs(vehicle_heading - bearing_to_signal)
+    if diff > 180:
+        diff = 360 - diff
+    return diff <= (fov / 2)
 
 
 # ── Connection callback ────────────────────────────────────────────────────────
@@ -137,8 +157,8 @@ async def handle_message(client, topic: str, payload: bytes, qos: int, propertie
 
     Expected topic format: sih/ambulance/telemetry/{ambulance_id}
     """
-    # Promoted to INFO so every inbound message is visible at default log level
-    logger.info(
+    # Promoted to DEBUG to reduce console spam on every tick
+    logger.debug(
         "📩  MQTT message received | topic=%s | qos=%s | payload=%s",
         topic,
         qos,
@@ -188,7 +208,8 @@ async def _handle_telemetry(ambulance_id: str, raw_payload: bytes) -> None:
         )
         return
 
-    logger.info(
+    # Log at DEBUG level to avoid console flooding
+    logger.debug(
         "🚑  Telemetry | ambulance_id=%s status=%s lat=%.6f lng=%.6f",
         ambulance_id,
         status,
@@ -213,30 +234,116 @@ async def _handle_telemetry(ambulance_id: str, raw_payload: bytes) -> None:
         })
     )
 
-    # ── 3. Fast-Path Preemption ────────────────────────────────────────────────
+    # ── 3. Fast-Path Preemption (Edge-Triggered & Directional) ───────────────────────────────
     if status.lower() in ["active", "dispatched", "blocked"]:
+        
+        # 3.1 Calculate Heading
+        prev = PREVIOUS_LOCATIONS.get(ambulance_id)
+        vehicle_heading = None
+        if prev:
+            prev_lat, prev_lng = prev
+            # Only calculate bearing if there is actual movement
+            if prev_lat != lat or prev_lng != lng:
+                vehicle_heading = calculate_bearing(prev_lat, prev_lng, lat, lng)
+        
+        PREVIOUS_LOCATIONS[ambulance_id] = (lat, lng)
+
         for signal in CACHED_SIGNALS:
             dist = haversine_distance(lat, lng, signal['lat'], signal['lng'])
-            if dist <= 0.5: # 500 meters
-                override_topic = f"sih/traffic/signals/{signal['id']}/override"
-                override_payload = json.dumps({
-                    "status": "GREEN", 
-                    "ambulance_id": ambulance_id, 
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                })
-                mqtt.publish(override_topic, override_payload, qos=1)
-                
-                # Only log debug to avoid spamming the logs on every 1-second telemetry ping
-                logger.debug("⚡ Fast-Path Preemption! Override published → topic=%s", override_topic)
+            override_key = f"{ambulance_id}_{signal['id']}"
 
-                override_event = {
-                    "type": "SIGNAL_OVERRIDE",
-                    "payload": {
-                        "signal_id": signal['id'],
-                        "status": "GREEN"
+            # 3.2 Evaluate Direction
+            in_front = True # Default to true for the first ping if heading is unknown
+            if vehicle_heading is not None:
+                bearing_to_signal = calculate_bearing(lat, lng, signal['lat'], signal['lng'])
+                in_front = is_in_front(vehicle_heading, bearing_to_signal, fov=90)
+
+            if dist <= 0.5 and in_front: # On Entry (<= 500 meters AND in front)
+                if override_key not in ACTIVE_OVERRIDES:
+                    ACTIVE_OVERRIDES.add(override_key)
+                    
+                    override_topic = f"sih/traffic/signals/{signal['id']}/override"
+                    override_payload = json.dumps({
+                        "status": "GREEN", 
+                        "ambulance_id": ambulance_id, 
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    })
+                    mqtt.publish(override_topic, override_payload, qos=1)
+                    logger.info("⚡ Fast-Path Preemption ENTRY! Override GREEN → topic=%s", override_topic)
+
+                    override_event = {
+                        "type": "SIGNAL_OVERRIDE",
+                        "payload": {
+                            "signal_id": signal['id'],
+                            "status": "GREEN"
+                        }
                     }
-                }
-                asyncio.create_task(live_map_manager.broadcast(override_event))
+                    asyncio.create_task(live_map_manager.broadcast(override_event))
+
+                    # Fire TTS (Run in thread to avoid blocking fast path)
+                    def fire_tts(amb_id, sig_name):
+                        db_session = SessionLocal()
+                        try:
+                            amb = db_session.get(Ambulance, amb_id)
+                            if not amb: return
+                            
+                            hosp_name = None
+                            if amb.target_hospital_id:
+                                hosp_name = db_session.query(Hospital.name).filter(Hospital.id == amb.target_hospital_id).scalar()
+                            
+                            if amb.radio_channel_id:
+                                roip_topic = f"sih/roip/channel/{amb.radio_channel_id}/broadcast"
+                                roip_payload = json.dumps({
+                                    "action": "play_tts",
+                                    "text": f"Alert: Emergency vehicle {amb.vehicle_number} is approaching {sig_name}. Please clear the intersection immediately.",
+                                    "priority": "HIGH",
+                                    "timestamp": datetime.now(timezone.utc).isoformat()
+                                })
+                                mqtt.publish(roip_topic, roip_payload, qos=1)
+                                logger.info("📻  RoIP TTS published → topic=%s", roip_topic)
+
+                            # generate_and_dispatch_audio is async, but we are inside a sync thread. 
+                            # We can dispatch it back to the main event loop.
+                            loop = asyncio.get_event_loop()
+                            asyncio.run_coroutine_threadsafe(
+                                generate_and_dispatch_audio(
+                                    police_unit_code="DISPATCH",
+                                    ambulance_id=str(amb.id),
+                                    vehicle_number=amb.vehicle_number,
+                                    driver_name=amb.driver_name or "Unknown",
+                                    contact_number=amb.contact_number or "Unknown",
+                                    trigger_type="GREEN_CORRIDOR",
+                                    location_name=sig_name,
+                                    destination_name=hosp_name,
+                                    radio_channel_id=amb.radio_channel_id
+                                ), loop
+                            )
+                        finally:
+                            db_session.close()
+
+                    asyncio.get_running_loop().run_in_executor(None, fire_tts, ambulance_id, signal['name'])
+
+            else: # On Exit (> 500 meters or passed the intersection)
+                if override_key in ACTIVE_OVERRIDES:
+                    ACTIVE_OVERRIDES.remove(override_key)
+                    
+                    override_topic = f"sih/traffic/signals/{signal['id']}/override"
+                    override_payload = json.dumps({
+                        "status": "NORMAL", 
+                        "ambulance_id": ambulance_id, 
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    })
+                    mqtt.publish(override_topic, override_payload, qos=1)
+                    logger.info("⚡ Fast-Path Preemption EXIT! Override NORMAL → topic=%s", override_topic)
+
+                    override_event = {
+                        "type": "SIGNAL_OVERRIDE",
+                        "payload": {
+                            "signal_id": signal['id'],
+                            "status": "NORMAL"
+                        }
+                    }
+                    asyncio.create_task(live_map_manager.broadcast(override_event))
 
 
 async def flush_telemetry_to_db() -> None:
@@ -304,51 +411,6 @@ async def flush_telemetry_to_db() -> None:
                                     if route_geom:
                                         ambulance.active_route_geom = from_shape(shape(route_geom), srid=4326)
                                         logger.info("🗺️  Successfully auto-rerouted ambulance %s to %s", ambulance_id, hospital.name)
-
-                            nearby_signals = db.query(TrafficSignal).filter(
-                                func.ST_DWithin(
-                                    cast(TrafficSignal.geom, Geography),
-                                    func.ST_GeogFromText(ambulance_point_wkt),
-                                    500
-                                ),
-                                func.ST_DWithin(
-                                    cast(TrafficSignal.geom, Geography),
-                                    cast(func.ST_GeomFromEWKB(ambulance.active_route_geom), Geography),
-                                    20
-                                )
-                            ).all()
-                        else:
-                            nearby_signals = []
-
-                        hospital_name = None
-                        if ambulance.target_hospital_id:
-                            hospital_name = db.query(Hospital.name).filter(Hospital.id == ambulance.target_hospital_id).scalar()
-
-                        for signal in nearby_signals:
-                            if ambulance.radio_channel_id:
-                                roip_topic = f"sih/roip/channel/{ambulance.radio_channel_id}/broadcast"
-                                roip_payload = json.dumps({
-                                    "action": "play_tts",
-                                    "text": f"Alert: Emergency vehicle {ambulance.vehicle_number} is approaching {signal.intersection_name}. Please clear the intersection immediately.",
-                                    "priority": "HIGH",
-                                    "timestamp": datetime.now(timezone.utc).isoformat()
-                                })
-                                mqtt.publish(roip_topic, roip_payload, qos=1)
-                                logger.info("📻  RoIP TTS published → topic=%s", roip_topic)
-                            
-                            asyncio.create_task(
-                                generate_and_dispatch_audio(
-                                    police_unit_code="DISPATCH",
-                                    ambulance_id=str(ambulance.id),
-                                    vehicle_number=ambulance.vehicle_number,
-                                    driver_name=ambulance.driver_name or "Unknown",
-                                    contact_number=ambulance.contact_number or "Unknown",
-                                    trigger_type="GREEN_CORRIDOR",
-                                    location_name=signal.intersection_name,
-                                    destination_name=hospital_name,
-                                    radio_channel_id=ambulance.radio_channel_id
-                                )
-                            )
                 
                 db.commit()
             except Exception as exc:
