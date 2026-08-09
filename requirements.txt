@@ -30,9 +30,12 @@ bcrypt==4.1.2
 paho-mqtt
 
 # ── Emergency Dispatch (RoIP / TTS) ──────────────────────────────────────────
-# pyttsx3
-gTTS==2.5.1           # Fully offline Text-to-Speech (no network required)
-httpx             # Async HTTP client for dispatching audio to RoIP gateway
+# pyttsx3                 # Fully offline Text-to-Speech (requires espeak-ng on Linux)
+gTTS==2.5.1               # Google Text-to-Speech (requires network)
+httpx                     # Async HTTP client for dispatching audio to RoIP gateway
+
+# ── Simulation & Scripts ───────────────────────────────────────────────────────
+requests                  # Required by simulate_ambulance.py for REST API calls
 
 # ── Discord Voice Gateway (Mock RoIP Bot) ─────────────────────────────────────
 discord.py        # Discord bot framework (voice support included)

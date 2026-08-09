@@ -28,12 +28,12 @@ logger = logging.getLogger(__name__)
 # Fallback check for DISCORD_WEBHOOK_URL (Text notifications)
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 if not DISCORD_WEBHOOK_URL:
-    logger.warning("⚠️  DISCORD_WEBHOOK_URL is missing or empty. Text alerts will not be sent to Discord.")
+    logger.warning("⚠️  _WEBHOOK_URL is missing or empty. Text alerts will not be sent to Discord.")
 else:
     logger.info("✅ DISCORD_WEBHOOK_URL loaded successfully.")
 
 # Target RoIP gateway — the Discord bot's aiohttp server (port 8001).
-ROIP_GATEWAY_URL = "http://127.0.0.1:8001/api/v1/emergency/mock-roip-gateway"
+ROIP_GATEWAY_URL = "http://discord-gateway:8001/api/v1/emergency/mock-roip-gateway"
 
 
 def _synthesize_tts_file(message: str, output_path: str) -> None:
