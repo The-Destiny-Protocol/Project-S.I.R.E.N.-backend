@@ -68,12 +68,14 @@ def get_ambulances_geojson(
         Ambulance.operator_type,
         Ambulance.updated_at,
         func.ST_AsGeoJSON(Ambulance.location).label("geojson"),
+        func.ST_AsGeoJSON(Ambulance.active_route_geom).label("route_geojson"),
     ).all()
 
     features: list[dict[str, Any]] = []
     for row in rows:
         # ST_AsGeoJSON returns a JSON *string* — parse it so it embeds cleanly.
         geometry = json.loads(row.geojson) if row.geojson else None
+        route_geojson = json.loads(row.route_geojson) if row.route_geojson else None
 
         features.append({
             "type": "Feature",
@@ -83,6 +85,7 @@ def get_ambulances_geojson(
                 "status": row.status,
                 "operator_type": row.operator_type,
                 "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+                "route_geojson": route_geojson,
             },
         })
 

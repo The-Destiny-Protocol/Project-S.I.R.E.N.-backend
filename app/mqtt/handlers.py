@@ -61,6 +61,8 @@ CACHED_SIGNALS = []
 SIGNALS_LOADED = False
 ACTIVE_OVERRIDES = set()
 PREVIOUS_LOCATIONS = {}
+COOLDOWNS = {}  # Tracks the last time (time.time()) a TTS alert fired per override_key
+
 
 def load_traffic_signals():
     global CACHED_SIGNALS, SIGNALS_LOADED
@@ -214,6 +216,18 @@ async def _handle_route_update(ambulance_id: str, raw_payload: bytes) -> None:
             )
             db.commit()
             logger.info("🗺️  Saved new active route for ambulance %s", ambulance_id)
+
+            # Broadcast route update to React frontend
+            from app.services.ws_manager import live_map_manager
+            asyncio.create_task(
+                live_map_manager.broadcast({
+                    "topic": f"sih/ambulance/telemetry/{ambulance_id}",
+                    "payload": {
+                        "ambulance_id": ambulance_id,
+                        "route_geojson": geojson
+                    }
+                })
+            )
     except Exception as exc:
         db.rollback()
         logger.exception("❌ Failed to save route to DB: %s", exc)
@@ -292,13 +306,33 @@ async def _handle_telemetry(ambulance_id: str, raw_payload: bytes) -> None:
 
             # 3.2 Evaluate Direction
             in_front = True # Default to true for the first ping if heading is unknown
+            bearing_to_signal = 0.0
+            diff = 0.0
             if vehicle_heading is not None:
                 bearing_to_signal = calculate_bearing(lat, lng, signal['lat'], signal['lng'])
-                in_front = is_in_front(vehicle_heading, bearing_to_signal, fov=90)
+                in_front = is_in_front(vehicle_heading, bearing_to_signal, fov=120)  # ±60 degrees
+                diff = abs(vehicle_heading - bearing_to_signal)
+                if diff > 180:
+                    diff = 360 - diff
+
+            # Verbose logging as requested for diagnostics
+            if dist <= 0.8:  # Only log when somewhat close to avoid extreme spam
+                logger.debug(
+                    "🗺️ [Spatial Audit] Amb:%s -> Sig:%s | Dist:%.0fm | Heading:%.1f° | SigBearing:%.1f° | Offset:%.1f° | InFront:%s",
+                    ambulance_id, signal['name'], dist * 1000, vehicle_heading or 0.0, bearing_to_signal, diff, in_front
+                )
+
+            # Check cooldown (15 seconds)
+            import time
+            current_time = time.time()
+            last_fired = COOLDOWNS.get(override_key, 0)
+            can_trigger = (current_time - last_fired) > 15
 
             if dist <= 0.5 and in_front: # On Entry (<= 500 meters AND in front)
-                if override_key not in ACTIVE_OVERRIDES:
+                if override_key not in ACTIVE_OVERRIDES or can_trigger:
                     ACTIVE_OVERRIDES.add(override_key)
+                    COOLDOWNS[override_key] = current_time
+
                     
                     override_topic = f"sih/traffic/signals/{signal['id']}/override"
                     override_payload = json.dumps({
@@ -319,7 +353,7 @@ async def _handle_telemetry(ambulance_id: str, raw_payload: bytes) -> None:
                     asyncio.create_task(live_map_manager.broadcast(override_event))
 
                     # Fire TTS (Run in thread to avoid blocking fast path)
-                    def fire_tts(amb_id, sig_name):
+                    def fire_tts(amb_id, sig_name, main_loop):
                         db_session = SessionLocal()
                         try:
                             amb = db_session.get(Ambulance, amb_id)
@@ -342,7 +376,6 @@ async def _handle_telemetry(ambulance_id: str, raw_payload: bytes) -> None:
 
                             # generate_and_dispatch_audio is async, but we are inside a sync thread. 
                             # We can dispatch it back to the main event loop.
-                            loop = asyncio.get_event_loop()
                             asyncio.run_coroutine_threadsafe(
                                 generate_and_dispatch_audio(
                                     police_unit_code="DISPATCH",
@@ -354,12 +387,13 @@ async def _handle_telemetry(ambulance_id: str, raw_payload: bytes) -> None:
                                     location_name=sig_name,
                                     destination_name=hosp_name,
                                     radio_channel_id=amb.radio_channel_id
-                                ), loop
+                                ), main_loop
                             )
                         finally:
                             db_session.close()
 
-                    asyncio.get_running_loop().run_in_executor(None, fire_tts, ambulance_id, signal['name'])
+                    main_loop = asyncio.get_running_loop()
+                    main_loop.run_in_executor(None, fire_tts, ambulance_id, signal['name'], main_loop)
 
             else: # On Exit (> 500 meters or passed the intersection)
                 if override_key in ACTIVE_OVERRIDES:

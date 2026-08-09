@@ -254,7 +254,7 @@ class FleetSimulator:
                         print(f"{C_GREEN}[EN_ROUTE] {prefix_id}{C_RESET}  -> Lat: {amb['lat']:.4f}, Lng: {amb['lng']:.4f} (Speed: {amb['speed']:.1f} km/h)")
                         
                     elif amb["state"] == "STANDBY":
-                        self.publish_telemetry(amb, "active")
+                        self.publish_telemetry(amb, "standby")
                         print(f"{C_YELLOW}[STANDBY]  {prefix_id}{C_RESET}  -> Parked at {amb['name']}")
                         
                     elif amb["state"] == "EMERGENCY":
