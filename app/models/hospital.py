@@ -26,6 +26,9 @@ class Hospital(Base):
 
     name: Mapped[str] = mapped_column(String(200), nullable=False)
 
+    type: Mapped[str] = mapped_column(String(50), nullable=True)
+    address: Mapped[str] = mapped_column(String(500), nullable=True)
+
     # Location of the hospital as a PostGIS POINT (longitude, latitude) in WGS-84
     geom: Mapped[object] = mapped_column(
         Geometry(geometry_type="POINT", srid=4326),

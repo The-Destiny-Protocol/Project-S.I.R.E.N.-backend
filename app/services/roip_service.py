@@ -21,10 +21,19 @@ import uuid
 
 import httpx
 
+from app.config import settings
+
 logger = logging.getLogger(__name__)
 
+# Fallback check for DISCORD_WEBHOOK_URL (Text notifications)
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
+if not DISCORD_WEBHOOK_URL:
+    logger.warning("⚠️  _WEBHOOK_URL is missing or empty. Text alerts will not be sent to Discord.")
+else:
+    logger.info("✅ DISCORD_WEBHOOK_URL loaded successfully.")
+
 # Target RoIP gateway — the Discord bot's aiohttp server (port 8001).
-ROIP_GATEWAY_URL = "http://127.0.0.1:8001/api/v1/emergency/mock-roip-gateway"
+ROIP_GATEWAY_URL = "http://discord-gateway:8001/api/v1/emergency/mock-roip-gateway"
 
 
 def _synthesize_tts_file(message: str, output_path: str) -> None:
@@ -99,6 +108,13 @@ async def generate_and_dispatch_audio(
 
         print("[RoIP] OK TTS synthesis complete. Dispatching to gateway ...", flush=True)
         logger.info("🔊  TTS synthesis complete. Dispatching to RoIP gateway …")
+
+        # Send text webhook if configured
+        if DISCORD_WEBHOOK_URL:
+            try:
+                await client.post(DISCORD_WEBHOOK_URL, json={"content": f"🚨 **RoIP Dispatch:** {message}"})
+            except Exception as e:
+                logger.error("Failed to send text webhook: %s", e)
 
         # POST the .mp3 bytes to the gateway
         with open(tmp_path, "rb") as audio_file:

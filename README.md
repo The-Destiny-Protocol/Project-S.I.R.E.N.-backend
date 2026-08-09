@@ -45,37 +45,37 @@ The REST API layer serves the control-room dashboard and the simulation/frontend
 ```
 ┌──────────────────┐        MQTT (TLS:8883)        ┌──────────────────────┐
 │  Ambulance IoT   │ ──── telemetry/{id} ────────▶ │   HiveMQ Cloud       │
-│  Edge Device     │                                │   (Message Broker)   │
-└──────────────────┘                                └──────────┬───────────┘
-                                                               │
-                                                               ▼
-                                                    ┌──────────────────────┐
-                                                    │   FastAPI Backend     │
-                                                    │  ┌────────────────┐  │
-                                                    │  │ MQTT Handlers  │  │  ◀── subscribes to sih/ambulance/telemetry/+
-                                                    │  │ (handlers.py)  │  │  ──▶ publishes to sih/police/trigger/{id}
-                                                    │  └───────┬────────┘  │
-                                                    │          │           │
-                                                    │  ┌───────▼────────┐  │
-                                                    │  │ Geospatial     │  │  ◀── ST_Distance via PostGIS
-                                                    │  │ Service        │  │
-                                                    │  └───────┬────────┘  │
-                                                    │          │           │
-                                                    │  ┌───────▼────────┐  │
-                                                    │  │ PostgreSQL +   │  │
-                                                    │  │ PostGIS        │  │
-                                                    │  └───────┬────────┘  │
-                                                    │          │           │
-                                                    │  ┌───────▼────────┐  │
-                                                    │  │ REST API       │  │  ◀── JWT-secured endpoints
-                                                    │  │ WS Live Map    │  │  ◀── Real-time WS broadcasts
-                                                    │  └───────┬────────┘  │
-                                                    └──────────│───────────┘
-                                                               │  HTTP POST (.wav)
-                                                    ┌──────────▼───────────┐
-                                                    │ Discord Gateway      │
-                                                    │ (Mock RoIP Bot)      │  ──▶ Discord Voice Channel
-                                                    └──────────────────────┘
+│  Edge Device     │                               │   (Message Broker)   │
+└──────────────────┘                               └──────────┬───────────┘
+                                                              │
+                                                              ▼
+                                                   ┌──────────────────────┐
+                                                   │   FastAPI Backend    │
+                                                   │  ┌────────────────┐  │
+                                                   │  │ MQTT Handlers  │  │ ◀── subscribes to sih/ambulance/telemetry/+
+                                                   │  │ Fast-Path      │  │ ──▶ publishes GREEN override to signals
+                                                   │  └───────┬────────┘  │
+                                                   │          │           │
+                 ┌──────────────────────┐          │  ┌───────▼────────┐  │
+                 │   Redis (Upstash)    │ ◀─────── │  │ Write-Behind   │  │ ──▶ Broadcasts to WS Live Map
+                 │  Telemetry Buffer    │          │  │ Cache (5s)     │  │
+                 └──────────────────────┘          │  └───────┬────────┘  │
+                                                   │          │           │
+                                                   │  ┌───────▼────────┐  │
+                                                   │  │ PostgreSQL +   │  │ ◀── Batch Inserts & ST_Distance routing
+                                                   │  │ PostGIS        │  │
+                                                   │  └───────┬────────┘  │
+                                                   │          │           │
+                                                   │  ┌───────▼────────┐  │
+                                                   │  │ REST API &     │  │ ◀── JWT-secured endpoints
+                                                   │  │ WebSockets     │  │ ◀── Real-time GeoJSON
+                                                   │  └───────┬────────┘  │
+                                                   └──────────│───────────┘
+                                                              │  HTTP POST (.wav)
+                                                   ┌──────────▼───────────┐
+                                                   │ Discord Gateway      │
+                                                   │ (Mock RoIP Bot)      │ ──▶ Discord Voice Channel
+                                                   └──────────────────────┘
 ```
 
 ---
@@ -85,7 +85,7 @@ The REST API layer serves the control-room dashboard and the simulation/frontend
 | Layer           | Technology                                      |
 |-----------------|--------------------------------------------------|
 | **Framework**   | FastAPI 0.115.6 + Uvicorn 0.32.1                 |
-| **Database**    | PostgreSQL + PostGIS (via Supabase or local)     |
+| **Database**    | PostgreSQL + PostGIS (Supabase) + Redis (Upstash)|
 | **ORM**         | SQLAlchemy 2.0.36 + GeoAlchemy2 0.15.2           |
 | **Validation**  | Pydantic V2 (2.10.6) + pydantic-settings 2.7.1  |
 | **MQTT**        | HiveMQ Cloud (Free Tier) via fastapi-mqtt / gmqtt|
@@ -345,6 +345,15 @@ The application uses **3 tables**, auto-created on startup via `Base.metadata.cr
 | `location`   | GEOMETRY(POINT, 4326) | PostGIS point (longitude, latitude) WGS-84    |
 | `updated_at` | TIMESTAMPTZ           | Last update timestamp                          |
 
+### `traffic_signals`
+| Column              | Type                  | Description                                   |
+|---------------------|-----------------------|-----------------------------------------------|
+| `id`                | UUID (PK)             | Unique signal identifier                      |
+| `intersection_name` | VARCHAR(200)          | Name of the intersection                      |
+| `status`            | VARCHAR(20)           | Default `AUTO`, overrides: `GREEN`, `NORMAL`  |
+| `geom`              | GEOMETRY(POINT, 4326) | PostGIS point (longitude, latitude) WGS-84    |
+| `updated_at`        | TIMESTAMPTZ           | Last update timestamp                         |
+
 ### `users`
 | Column           | Type          | Description                          |
 |------------------|---------------|--------------------------------------|
@@ -370,10 +379,12 @@ All schemas default to **Bhubaneswar, Odisha, India**:
 
 ### Key Design Decisions
 
-1. **Lazy/Non-Fatal Startup**: The MQTT broker connection is wrapped in `try/except` during startup. If the broker is unreachable, REST endpoints still work.
-2. **Explicit Transaction Management**: All database write endpoints use explicit `db.commit()` / `db.rollback()` to avoid silent SQLAlchemy pool-level rollbacks.
-3. **Geography Casting**: Geospatial queries use `GeoAlchemy2.Geography()` type for `ST_Distance` to get accurate metre-based distances instead of degree-based approximations.
-4. **Standard TLS (not mTLS)**: The MQTT client uses `ssl.create_default_context()` with Username/Password for HiveMQ Cloud Free Tier compatibility.
+1. **Write-Behind Caching (Redis)**: High-frequency 1-second telemetry from hundreds of ambulances is buffered in a Redis Hash and flushed to PostgreSQL every 5 seconds via an async background task to prevent `EMAXCONNSESSION` database exhaustion.
+2. **Directional Edge-Triggered Preemption**: The Green Corridor fast-path uses Haversine math combined with an in-memory 90-degree forward Field of View (FOV) cone. Traffic signals are only overridden to GREEN when the ambulance is approaching, and are instantly restored to NORMAL via `ACTIVE_OVERRIDES` state debouncing as soon as it passes.
+3. **Lazy/Non-Fatal Startup**: The MQTT broker connection is wrapped in `try/except` during startup. If the broker is unreachable, REST endpoints still work. We also execute a startup query to reset all ghost `traffic_signals` to `AUTO`.
+4. **Explicit Transaction Management**: All database write endpoints use explicit `db.commit()` / `db.rollback()` to avoid silent SQLAlchemy pool-level rollbacks.
+5. **Geography Casting**: Geospatial queries use `GeoAlchemy2.Geography()` type for `ST_Distance` to get accurate metre-based distances instead of degree-based approximations.
+6. **Live Map WebSockets**: WebSockets unconditionally bypass CORS for local development and hydrate the React frontend instantly from the MQTT handler stream, mapping raw geometries into Mapbox-ready GeoJSON objects.
 
 ### Adding a New Endpoint
 

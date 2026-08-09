@@ -12,7 +12,7 @@
 | **Competition**  | Smart India Hackathon 2026                          |
 | **Language**     | Python 3.13                                         |
 | **Framework**    | FastAPI 0.115.6                                     |
-| **Database**     | PostgreSQL + PostGIS (via Supabase)                  |
+| **Database**     | PostgreSQL + PostGIS (Supabase) & Redis (Upstash)   |
 | **MQTT Broker**  | HiveMQ Cloud Free Tier (TLS on port 8883)            |
 | **Auth**         | JWT (HS256) with bcrypt password hashing             |
 
@@ -122,6 +122,11 @@ The database stores roles as **exact strings**: `"Admin"` and `"Dispatcher"`.
 | MQTT subscription not working on reconnect | Subscription was outside `on_connect` callback | Moved `client.subscribe()` into `handle_connect()` |
 | RoleChecker returning 403 for valid users | Role strings were lowercase in code (`"admin"`) but stored as `"Admin"` in DB | Normalized all `RoleChecker` calls to use exact DB values |
 | `gmqtt` `on_connect` `rc` is a `ReasonCode` object in MQTT v5 | Code compared `rc == 0` but `rc` was an object | Added `rc.value if hasattr(rc, "value") else int(rc)` normalization |
+| `EMAXCONNSESSION` in Supabase | 1-second telemetry from multiple ambulances exhausted Postgres connection pool | Implemented Redis Write-Behind Cache to buffer telemetry and flush every 5s |
+| Traffic lights permanently GREEN | `ACTIVE_OVERRIDES` set cleared on backend restart, leaving ghost states | Added startup lifecycle event in `main.py` to reset all signals to `AUTO` |
+| 360-degree Preemption | 500m radius check triggered signals behind the ambulance | Implemented 90-degree forward Field of View (FOV) using heading and bearing math |
+| Discord TTS Gateway Spam | Preemption triggered every second while within 500m | Implemented Edge-Triggered State Tracking (`ACTIVE_OVERRIDES`) to fire once per intersection |
+| WebSockets rejected by CORS | `CORSMiddleware` doesn't protect WebSocket handshakes | Removed strict origin checking from `websocket.accept()` for local dev |
 
 ---
 
@@ -137,34 +142,33 @@ Before upgrading any dependency, check for breaking changes in these areas.
 
 ---
 
-## 6. Data Flow: Blocked Ambulance → Police Alert
+## 6. Data Flow: Blocked Ambulance → Police Alert & Preemption
 
-```
-1. Ambulance IoT device or Edge Vision AI publishes to:
+```text
+1. Ambulance IoT device or Edge Vision AI publishes telemetry every 1s:
    sih/ambulance/telemetry/{ambulance_id}
    Payload: {"status": "blocked", "lat": 20.2960, "lng": 85.8245}
 
-2. handlers.py::handle_message() is invoked.
-   a. Telemetry is broadcast via WebSockets (Live Map) immediately.
+2. handlers.py::handle_message() routes to _handle_telemetry():
+   a. Telemetry is saved to Redis Hash `telemetry_buffer` (Write-Behind Cache).
+   b. Payload is instantly broadcast to React frontend via WebSockets (`live_map_manager.broadcast`).
 
-3. _handle_telemetry() runs:
-   a. Upserts the ambulance's location and status in the DB.
-   b. db.commit()
+3. FAST-PATH Preemption (Edge-Triggered & Directional):
+   a. Calculates vehicle heading via `PREVIOUS_LOCATIONS`.
+   b. Checks if any `CACHED_SIGNALS` are within 500m AND within a 90° forward FOV.
+   c. On Entry: Adds to `ACTIVE_OVERRIDES`, broadcasts `GREEN` to Map & MQTT hardware, fires RoIP TTS asynchronously (Debounced).
+   d. On Exit: Removes from `ACTIVE_OVERRIDES`, broadcasts `NORMAL` to Map & MQTT hardware.
 
-4. If status == "blocked" (or if POST /sos is hit directly):
-   a. _trigger_nearest_police() calls find_nearest_police_unit(lat, lng, db)
-   b. geospatial.py runs PostGIS ST_Distance query.
-   c. Returns the nearest PoliceUnit ORM object.
-   d. Saves an EmergencyIncident record to track the event.
-
-5. Background TTS Task (roip_service.py) starts:
-   a. Synthesizes a voice alert using `pyttsx3` into a `.wav` file.
-   b. Dispatches the `.wav` file over HTTP POST to the Discord Mock Gateway (port 8001).
-
-6. Discord Gateway (discord_bot.py) receives payload:
-   a. Bot connects to the designated Discord Voice Channel.
-   b. Streams the `.wav` file using FFmpegPCMAudio.
-   c. Disconnects cleanly when finished.
+4. SLOW-PATH (Background Task `flush_telemetry_to_db`):
+   a. Runs every 5 seconds.
+   b. HGETALL and DELETE from Redis pipeline.
+   c. Upserts PostgreSQL (location, status, updated_at).
+   d. Calculates route deviation (PostGIS `ST_Distance`). If > 50m, triggers auto-reroute.
+   
+5. If status == "blocked" (or POST /sos is hit):
+   a. `geospatial.py` runs PostGIS ST_Distance to find nearest PoliceUnit.
+   b. Saves EmergencyIncident.
+   c. Dispatches alerts to Discord Mock Gateway (RoIP).
 ```
 
 ---

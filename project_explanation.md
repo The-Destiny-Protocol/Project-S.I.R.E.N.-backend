@@ -11,10 +11,16 @@ This project introduces a **Real-Time Priority & De-Congestion System**. It crea
 
 ## 1. Core Components
 
-### A. The IoT Telemetry Pipeline
+### A. The IoT Telemetry Pipeline & Redis Cache
 Ambulances are equipped with GPS devices that stream their location via **MQTT** to the cloud (HiveMQ). 
-- The backend listens to these streams in real-time.
-- If an ambulance reports its status as `blocked`, the system immediately triggers the emergency SOS pipeline.
+- To handle high-frequency scale (1-second intervals from hundreds of vehicles), the backend uses a **Redis Write-Behind Cache**. 
+- Telemetry is buffered in Redis (`telemetry_buffer`) and instantly broadcast to the frontend via WebSockets.
+- A background task flushes the buffer to PostgreSQL every 5 seconds to prevent database connection exhaustion (`EMAXCONNSESSION`).
+
+### A2. Smart Traffic Light Preemption (Green Corridor)
+We implemented a fast-path, sub-millisecond calculation engine for traffic lights directly in the MQTT handler.
+- **Directional FOV**: The system calculates the vehicle's heading and uses Haversine math to check if a signal is within 500 meters *and* within a 90-degree forward Field of View.
+- **Edge-Triggered Debouncing**: Signals are instantly overridden to `GREEN` upon entry of the FOV cone, and reverted to `NORMAL` the moment the ambulance passes, preventing "ghost states".
 
 ### B. AI Vision Anomaly Detection (Edge AI)
 Instead of relying solely on the driver to press a panic button, we deployed an Edge AI Vision component (`yolo_detector.py`).
@@ -46,16 +52,18 @@ The control room requires a live map of the city.
 
 ## 2. Technical Workflow (End-to-End)
 
-1. **Movement**: Ambulance IoT sends `{lat, lng, status: "active"}` via MQTT.
-2. **Live Map**: Backend receives MQTT, updates PostGIS, and broadcasts to the Web UI via WebSockets.
-3. **Blockage**: Driver presses panic button OR Edge Vision AI detects traffic.
-4. **SOS Trigger**: `POST /sos` is hit. Ambulance status changes to `SOS_ACTIVE`.
-5. **Spatial Query**: Backend finds the nearest police unit using PostGIS `ST_Distance`.
+1. **Movement**: Ambulance IoT sends `{lat, lng, status: "blocked"}` via MQTT.
+2. **Buffer & Broadcast**: Backend intercepts the telemetry, saves it to a Redis Hash, and instantly broadcasts it to the Web UI via WebSockets (`/api/v1/ws/live-map`).
+3. **Fast-Path Preemption**:
+   - Calculates the vehicle heading.
+   - If a traffic signal is within 500m and a 90-degree forward arc, it publishes a `GREEN` override to the MQTT hardware.
+   - Dispatches a Text-to-Speech (TTS) alert alerting the traffic junction to clear.
+4. **Slow-Path Persistence**: A background task flushes the Redis buffer to PostgreSQL every 5 seconds, calculating route deviations and auto-recalculating the path if the ambulance deviated by > 50 meters.
+5. **SOS Trigger**: Because the status is `blocked`, the backend finds the nearest police unit using PostGIS `ST_Distance`.
 6. **Incident Created**: An `EmergencyIncident` record is saved.
-7. **Audio Synthesis**: Backend generates a `.wav` voice alert in a background thread.
-8. **Gateway Dispatch**: `.wav` is sent to the Discord Bot on port `8001`.
-9. **Radio Broadcast**: Discord Bot joins the voice channel and plays the audio alert to the police officers.
-10. **Resolution**: Control room tracks the incident via `GET /incidents/active` and eventually resolves it via `PATCH /incidents/{id}/resolve`.
+7. **Gateway Dispatch**: A `.wav` file is dispatched over HTTP POST to the Discord Mock Gateway (port 8001).
+8. **Radio Broadcast**: Discord Bot joins the voice channel and plays the audio alert to the police officers.
+9. **Resolution**: Control room tracks the incident via `GET /incidents/active` and eventually resolves it via `PATCH /incidents/{id}/resolve`.
 
 ---
 

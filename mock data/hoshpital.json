@@ -1,0 +1,162 @@
+[
+    {
+        "id": "HOSP-AIIMS",
+        "name": "AIIMS Bhubaneswar",
+        "lat": 20.2345,
+        "lng": 85.7721,
+        "type": "GOVT",
+        "address": "Sijua, Patrapada, Bhubaneswar"
+    },
+    {
+        "id": "HOSP-CAPITAL",
+        "name": "Capital Hospital",
+        "lat": 20.2644,
+        "lng": 85.8282,
+        "type": "GOVT",
+        "address": "Unit-6, Bhubaneswar"
+    },
+    {
+        "id": "HOSP-SUM",
+        "name": "IMS and SUM Hospital",
+        "lat": 20.2789,
+        "lng": 85.7753,
+        "type": "PRIVATE",
+        "address": "Kalinga Nagar, Bhubaneswar"
+    },
+    {
+        "id": "HOSP-KIMS",
+        "name": "Kalinga Institute of Medical Sciences (KIMS)",
+        "lat": 20.3541,
+        "lng": 85.8152,
+        "type": "PRIVATE",
+        "address": "Patia, Bhubaneswar"
+    },
+    {
+        "id": "HOSP-APOLLO",
+        "name": "Apollo Hospitals",
+        "lat": 20.3060,
+        "lng": 85.8290,
+        "type": "PRIVATE",
+        "address": "Sainik School Road, Unit 15, Bhubaneswar"
+    },
+    {
+        "id": "HOSP-AMRI",
+        "name": "AMRI Hospitals",
+        "lat": 20.2662,
+        "lng": 85.7876,
+        "type": "PRIVATE",
+        "address": "Khandagiri Square, Bhubaneswar"
+    },
+    {
+        "id": "HOSP-CARE",
+        "name": "Care Hospitals",
+        "lat": 20.3204,
+        "lng": 85.8166,
+        "type": "PRIVATE",
+        "address": "Chandrasekharpur, Bhubaneswar"
+    },
+    {
+        "id": "HOSP-KALINGA",
+        "name": "Kalinga Hospital",
+        "lat": 20.3155,
+        "lng": 85.8188,
+        "type": "PRIVATE",
+        "address": "Chandrasekharpur, Bhubaneswar"
+    },
+    {
+        "id": "HOSP-UTKAL",
+        "name": "Utkal Hospital",
+        "lat": 20.3217,
+        "lng": 85.8130,
+        "type": "PRIVATE",
+        "address": "Defense Colony, Niladri Vihar, Bhubaneswar"
+    },
+    {
+        "id": "HOSP-KAR",
+        "name": "Kar Clinic & Hospital",
+        "lat": 20.2818,
+        "lng": 85.8322,
+        "type": "PRIVATE",
+        "address": "Unit-4, Bhubaneswar"
+    },
+    {
+        "id": "HOSP-SPARSH",
+        "name": "Sparsh Hospital",
+        "lat": 20.2974,
+        "lng": 85.8456,
+        "type": "PRIVATE",
+        "address": "Sahid Nagar, Bhubaneswar"
+    },
+    {
+        "id": "HOSP-NEELACHAL",
+        "name": "Neelachal Hospital",
+        "lat": 20.2765,
+        "lng": 85.8384,
+        "type": "PRIVATE",
+        "address": "Unit 3, Kharabela Nagar, Bhubaneswar"
+    },
+    {
+        "id": "HOSP-HITECH",
+        "name": "Hi-Tech Medical College & Hospital",
+        "lat": 20.2981,
+        "lng": 85.8751,
+        "type": "PRIVATE",
+        "address": "Pandara, Rasulgarh, Bhubaneswar"
+    },
+    {
+        "id": "HOSP-ADITYA",
+        "name": "Aditya Ashwini Hospital",
+        "lat": 20.3283,
+        "lng": 85.8168,
+        "type": "PRIVATE",
+        "address": "Chandrasekharpur, Bhubaneswar"
+    },
+    {
+        "id": "HOSP-SUNSHINE",
+        "name": "Sunshine Hospital",
+        "lat": 20.2848,
+        "lng": 85.8524,
+        "type": "PRIVATE",
+        "address": "Laxmisagar, Bhubaneswar"
+    },
+    {
+        "id": "HOSP-VIVEKANAND",
+        "name": "Vivekanand Medical Mission",
+        "lat": 20.2589,
+        "lng": 85.7891,
+        "type": "PRIVATE",
+        "address": "Khandagiri, Bhubaneswar"
+    },
+    {
+        "id": "HOSP-PROLIFE",
+        "name": "Prolife Hospital",
+        "lat": 20.2891,
+        "lng": 85.8172,
+        "type": "PRIVATE",
+        "address": "Nayapalli, Bhubaneswar"
+    },
+    {
+        "id": "HOSP-SHREE",
+        "name": "Shree Hospitals",
+        "lat": 20.2812,
+        "lng": 85.8421,
+        "type": "PRIVATE",
+        "address": "Janpath Road, Bhubaneswar"
+    },
+    {
+        "id": "HOSP-ESI",
+        "name": "ESI Hospital",
+        "lat": 20.2854,
+        "lng": 85.8193,
+        "type": "GOVT",
+        "address": "Nayapalli, Bhubaneswar"
+    },
+    {
+        "id": "HOSP-BMC",
+        "name": "BMC Municipal Hospital",
+        "lat": 20.2655,
+        "lng": 85.8401,
+        "type": "GOVT",
+        "address": "Old Town, Bhubaneswar"
+    }
+]
