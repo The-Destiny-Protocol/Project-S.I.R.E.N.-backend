@@ -31,7 +31,7 @@ import redis.asyncio as aioredis
 from geoalchemy2.shape import from_shape, to_shape
 from shapely.geometry import Point, shape
 from sqlalchemy.orm import Session
-from sqlalchemy import func, cast
+from sqlalchemy import func, cast, text
 from geoalchemy2.types import Geography
 
 from app.database import SessionLocal
@@ -53,6 +53,7 @@ redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
 # '+' is the single-level wildcard — matches exactly one topic segment (the ambulance_id).
 # '#' would also work at the end but '+' is more precise and avoids matching sub-levels.
 TELEMETRY_TOPIC = "sih/ambulance/telemetry/+"
+ROUTE_TOPIC = "sih/ambulance/route/+"
 TRIGGER_TOPIC_TEMPLATE = "sih/police/trigger/{police_id}"
 
 # ── Global Cache ───────────────────────────────────────────────────────────────
@@ -135,6 +136,7 @@ def handle_connect(client, flags, rc, properties):
         
         # Subscribe inside on_connect so it auto-resubscribes on reconnection
         client.subscribe(TELEMETRY_TOPIC, qos=1)
+        client.subscribe(ROUTE_TOPIC, qos=1)
     else:
         logger.error(
             "❌  MQTT connection FAILED — rc=%s (%s). Check broker URL, port, credentials, and TLS config.",
@@ -178,9 +180,45 @@ async def handle_message(client, topic: str, payload: bytes, qos: int, propertie
             payload_dict = {"raw": payload.decode("utf-8", errors="replace")}
 
         await _handle_telemetry(ambulance_id, payload)
+    
+    # ── Ambulance route updates ────────────────────────────────────────────────
+    elif len(topic_parts) == 4 and topic_parts[:3] == ["sih", "ambulance", "route"]:
+        ambulance_id = topic_parts[3]
+        await _handle_route_update(ambulance_id, payload)
+        
     else:
         logger.debug("Unhandled topic: %s", topic)
 
+# ── Route Update Handler ───────────────────────────────────────────────────────
+async def _handle_route_update(ambulance_id: str, raw_payload: bytes) -> None:
+    """
+    Handle GeoJSON route updates published by an ambulance/simulator.
+    """
+    try:
+        geojson = json.loads(raw_payload.decode("utf-8"))
+        if "type" not in geojson or "coordinates" not in geojson:
+            raise ValueError("Invalid GeoJSON structure")
+    except Exception as exc:
+        logger.error("❌ Invalid route payload for %s: %s", ambulance_id, exc)
+        return
+
+    db: Session = SessionLocal()
+    try:
+        amb = db.get(Ambulance, ambulance_id)
+        if amb:
+            geojson_str = json.dumps(geojson)
+            # Use raw SQL to cleanly parse GeoJSON to PostGIS Geometry
+            db.execute(
+                text("UPDATE ambulances SET active_route_geom = ST_SetSRID(ST_GeomFromGeoJSON(:geojson), 4326) WHERE id = :id"),
+                {"geojson": geojson_str, "id": ambulance_id}
+            )
+            db.commit()
+            logger.info("🗺️  Saved new active route for ambulance %s", ambulance_id)
+    except Exception as exc:
+        db.rollback()
+        logger.exception("❌ Failed to save route to DB: %s", exc)
+    finally:
+        db.close()
 
 
 # ── Telemetry handler ──────────────────────────────────────────────────────────

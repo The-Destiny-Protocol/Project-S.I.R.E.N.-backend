@@ -1,0 +1,122 @@
+[
+    {
+        "unit_code": "OD-PCR-CAPITAL",
+        "name": "Capital Police Station",
+        "lat": 20.2635,
+        "lng": 85.8365
+    },
+    {
+        "unit_code": "OD-PCR-SAHID",
+        "name": "Sahid Nagar Police Station",
+        "lat": 20.2915,
+        "lng": 85.8450
+    },
+    {
+        "unit_code": "OD-PCR-NAYAPALLI",
+        "name": "Nayapalli Police Station",
+        "lat": 20.2870,
+        "lng": 85.8190
+    },
+    {
+        "unit_code": "OD-PCR-KHANDAGIRI",
+        "name": "Khandagiri Police Station",
+        "lat": 20.2595,
+        "lng": 85.7885
+    },
+    {
+        "unit_code": "OD-PCR-CSPUR",
+        "name": "Chandrasekharpur Police Station",
+        "lat": 20.3180,
+        "lng": 85.8175
+    },
+    {
+        "unit_code": "OD-PCR-INFOCITY",
+        "name": "Infocity Police Station",
+        "lat": 20.3550,
+        "lng": 85.8150
+    },
+    {
+        "unit_code": "OD-PCR-MANCHESWAR",
+        "name": "Mancheswar Police Station",
+        "lat": 20.3150,
+        "lng": 85.8500
+    },
+    {
+        "unit_code": "OD-PCR-BADAGADA",
+        "name": "Badagada Police Station",
+        "lat": 20.2540,
+        "lng": 85.8500
+    },
+    {
+        "unit_code": "OD-PCR-LINGARAJ",
+        "name": "Lingaraj Police Station",
+        "lat": 20.2390,
+        "lng": 85.8335
+    },
+    {
+        "unit_code": "OD-PCR-AIRFIELD",
+        "name": "Airfield Police Station",
+        "lat": 20.2310,
+        "lng": 85.8160
+    },
+    {
+        "unit_code": "OD-PCR-KHARAVELA",
+        "name": "Kharavela Nagar Police Station",
+        "lat": 20.2750,
+        "lng": 85.8390
+    },
+    {
+        "unit_code": "OD-PCR-MAHILA",
+        "name": "Mahila Police Station",
+        "lat": 20.2660,
+        "lng": 85.8345
+    },
+    {
+        "unit_code": "OD-PCR-TRAFFIC",
+        "name": "Traffic Police Station",
+        "lat": 20.2625,
+        "lng": 85.8340
+    },
+    {
+        "unit_code": "OD-PCR-BHARATPUR",
+        "name": "Bharatpur Police Station",
+        "lat": 20.2800,
+        "lng": 85.7820
+    },
+    {
+        "unit_code": "OD-PCR-LAXMISAGAR",
+        "name": "Laxmisagar Police Station",
+        "lat": 20.2750,
+        "lng": 85.8540
+    },
+    {
+        "unit_code": "OD-PCR-NANDANKANAN",
+        "name": "Nandankanan Police Station",
+        "lat": 20.3950,
+        "lng": 85.8200
+    },
+    {
+        "unit_code": "OD-PCR-MAITRI",
+        "name": "Maitri Vihar Police Station",
+        "lat": 20.3080,
+        "lng": 85.8150
+    },
+    {
+        "unit_code": "OD-PCR-TAMANDO",
+        "name": "Tamando Police Station",
+        "lat": 20.2765,
+        "lng": 85.7600
+    },
+    {
+        "unit_code": "OD-PCR-BALIANTA",
+        "name": "Balianta Police Station",
+        "lat": 20.2805,
+        "lng": 85.8850
+    },
+    {
+        "unit_code": "OD-PCR-DHAULI",
+        "name": "Dhauli Police Station",
+        "lat": 20.1980,
+        "lng": 85.8400
+    }
+]

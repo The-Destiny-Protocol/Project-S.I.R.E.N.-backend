@@ -1,0 +1,282 @@
+[
+    {
+        "id": "INT-AG",
+        "name": "AG Square",
+        "lat": 20.2625,
+        "lng": 85.8340,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-MASTER-CANTEEN",
+        "name": "Master Canteen Square",
+        "lat": 20.2668,
+        "lng": 85.8427,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-VANI-VIHAR",
+        "name": "Vani Vihar Square",
+        "lat": 20.2941,
+        "lng": 85.8354,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-JAYDEV-VIHAR",
+        "name": "Jaydev Vihar Square",
+        "lat": 20.2977,
+        "lng": 85.8164,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-RASULGARH",
+        "name": "Rasulgarh Square",
+        "lat": 20.2921,
+        "lng": 85.8624,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-KHANDAGIRI",
+        "name": "Khandagiri Square",
+        "lat": 20.2588,
+        "lng": 85.7865,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-FIRE-STATION",
+        "name": "Fire Station Square",
+        "lat": 20.2730,
+        "lng": 85.8015,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-CRPF",
+        "name": "CRPF Square",
+        "lat": 20.2825,
+        "lng": 85.8115,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-ACHARYA-VIHAR",
+        "name": "Acharya Vihar Square",
+        "lat": 20.2952,
+        "lng": 85.8250,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-KALPANA",
+        "name": "Kalpana Square",
+        "lat": 20.2530,
+        "lng": 85.8385,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-RAVI-TALKIES",
+        "name": "Ravi Talkies Square",
+        "lat": 20.2440,
+        "lng": 85.8425,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-RAJMAHAL",
+        "name": "Rajmahal Square",
+        "lat": 20.2610,
+        "lng": 85.8380,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-SISHU-BHAWAN",
+        "name": "Sishu Bhawan Square",
+        "lat": 20.2575,
+        "lng": 85.8345,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-AIRPORT",
+        "name": "Biju Patnaik Airport Square",
+        "lat": 20.2505,
+        "lng": 85.8165,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-SIRIPUR",
+        "name": "Siripur Square",
+        "lat": 20.2655,
+        "lng": 85.8105,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-DELTA",
+        "name": "Delta Square",
+        "lat": 20.2675,
+        "lng": 85.8010,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-GANGANAGAR",
+        "name": "Ganganagar Square",
+        "lat": 20.2640,
+        "lng": 85.8200,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-OUAT",
+        "name": "OUAT Square",
+        "lat": 20.2685,
+        "lng": 85.8140,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-BARAMUNDA",
+        "name": "Baramunda Bus Stand Square",
+        "lat": 20.2680,
+        "lng": 85.7940,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-PATIA",
+        "name": "Patia Square",
+        "lat": 20.3395,
+        "lng": 85.8180,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-DAMANA",
+        "name": "Damana Square",
+        "lat": 20.3255,
+        "lng": 85.8175,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-CSPUR",
+        "name": "Chandrasekharpur Petrol Pump Square",
+        "lat": 20.3150,
+        "lng": 85.8170,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-KALINGA-HOSP",
+        "name": "Kalinga Hospital Square",
+        "lat": 20.3160,
+        "lng": 85.8185,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-SAINIK-SCHOOL",
+        "name": "Sainik School Square",
+        "lat": 20.3080,
+        "lng": 85.8285,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-KALARAHANGA",
+        "name": "Kalarahanga Square",
+        "lat": 20.3550,
+        "lng": 85.8220,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-KIIT",
+        "name": "KIIT Square",
+        "lat": 20.3510,
+        "lng": 85.8185,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-SHIKHARCHANDI",
+        "name": "Shikhar Chandi Square",
+        "lat": 20.3650,
+        "lng": 85.8190,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-INFOCITY",
+        "name": "Infocity Square",
+        "lat": 20.3580,
+        "lng": 85.8120,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-NAYAPALLI",
+        "name": "Nayapalli Brit Colony Square",
+        "lat": 20.2885,
+        "lng": 85.8160,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-RUPALI",
+        "name": "Rupali Square",
+        "lat": 20.2890,
+        "lng": 85.8390,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-RAM-MANDIR",
+        "name": "Ram Mandir Square",
+        "lat": 20.2745,
+        "lng": 85.8405,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-HOUSING-BOARD",
+        "name": "Housing Board Square",
+        "lat": 20.2785,
+        "lng": 85.8415,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-PMG",
+        "name": "PMG Square",
+        "lat": 20.2665,
+        "lng": 85.8345,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-RABINDRA-MANDAP",
+        "name": "Rabindra Mandap Square",
+        "lat": 20.2705,
+        "lng": 85.8340,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-120-BATTALION",
+        "name": "120 Battalion Square",
+        "lat": 20.2755,
+        "lng": 85.8335,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-STEWART",
+        "name": "Stewart School Square",
+        "lat": 20.2805,
+        "lng": 85.8220,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-KALINGA-STADIUM",
+        "name": "Kalinga Stadium Square",
+        "lat": 20.2880,
+        "lng": 85.8235,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-PALASUNI",
+        "name": "Palasuni Square",
+        "lat": 20.2980,
+        "lng": 85.8670,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-HANSPAL",
+        "name": "Hanspal Square",
+        "lat": 20.3050,
+        "lng": 85.8750,
+        "type": "INTERSECTION"
+    },
+    {
+        "id": "INT-LINGIPUR",
+        "name": "Lingipur Square",
+        "lat": 20.2220,
+        "lng": 85.8450,
+        "type": "INTERSECTION"
+    }
+]

@@ -100,6 +100,9 @@ def get_active_ambulances(
     
     results = []
     for amb, route_geojson_str in ambulances:
+        if amb.location is None:
+            continue
+            
         pt = to_shape(amb.location)
         route_geojson = json.loads(route_geojson_str) if route_geojson_str else None
         

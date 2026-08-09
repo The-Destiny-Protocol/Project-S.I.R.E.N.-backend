@@ -27,7 +27,7 @@ bcrypt==4.1.2
 # --- Computer Vision / Edge Node ---
 # ultralytics
 # opencv-python
-# paho-mqtt
+paho-mqtt
 
 # ── Emergency Dispatch (RoIP / TTS) ──────────────────────────────────────────
 # pyttsx3
