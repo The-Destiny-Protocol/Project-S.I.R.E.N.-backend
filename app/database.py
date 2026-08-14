@@ -14,6 +14,7 @@ from app.config import settings
 engine = create_engine(
     settings.database_url,
     pool_pre_ping=True,      # recycle stale connections automatically
+    pool_recycle=300,        # recycle connections every 5 minutes (Supabase friendly)
     pool_size=10,
     max_overflow=20,
     echo=(settings.app_env == "development"),

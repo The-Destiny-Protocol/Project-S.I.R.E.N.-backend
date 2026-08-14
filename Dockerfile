@@ -37,5 +37,5 @@ RUN pip install --no-cache-dir --upgrade pip \
 # ── Application source ────────────────────────────────────────────────────────
 COPY . .
 
-# ── Default command (overridden per-service in docker-compose.yml) ────────────
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# ── Default command (Render uses $PORT environment variable) ────────────────
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
