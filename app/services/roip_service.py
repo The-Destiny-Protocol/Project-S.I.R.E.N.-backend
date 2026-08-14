@@ -6,11 +6,16 @@ Google Text-to-Speech (gTTS) synthesis + Radio-over-IP (RoIP) dispatch service.
 Flow:
   1. Compose an urgent voice alert message.
   2. Synthesize it to a temporary .mp3 file using gTTS (natural AI voice).
-  3. POST the .mp3 bytes to the configured RoIP gateway via httpx.AsyncClient.
-  4. Clean up the temp file regardless of success or failure.
+  3. Put the file path onto the shared audio_queue for the Discord bot to play.
 
 ⚠️  gTTS performs a synchronous HTTP request to fetch the audio. To avoid blocking 
    the FastAPI event loop, synthesis is wrapped in asyncio.to_thread().
+
+Architecture Note:
+  The old architecture posted .mp3 bytes via HTTP to a separate aiohttp server on
+  port 8001. The new architecture uses an in-process asyncio.Queue, eliminating
+  the need for a second port/process. The Discord bot consumer picks up the file
+  path and plays it in the voice channel, then deletes the temp file.
 """
 
 import asyncio
@@ -22,18 +27,16 @@ import uuid
 import httpx
 
 from app.config import settings
+from app.core.audio_queue import audio_queue, DispatchPayload
 
 logger = logging.getLogger(__name__)
 
 # Fallback check for DISCORD_WEBHOOK_URL (Text notifications)
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 if not DISCORD_WEBHOOK_URL:
-    logger.warning("⚠️  _WEBHOOK_URL is missing or empty. Text alerts will not be sent to Discord.")
+    logger.warning("⚠️  DISCORD_WEBHOOK_URL is missing or empty. Text alerts will not be sent to Discord.")
 else:
     logger.info("✅ DISCORD_WEBHOOK_URL loaded successfully.")
-
-# Target RoIP gateway — the Discord bot's aiohttp server (port 8001).
-ROIP_GATEWAY_URL = "http://discord-gateway:8001/api/v1/emergency/mock-roip-gateway"
 
 
 def _synthesize_tts_file(message: str, output_path: str) -> None:
@@ -63,8 +66,7 @@ async def generate_and_dispatch_audio(
 
     1. Builds a clear, urgent radio-ready alert message.
     2. Synthesizes to a temp .mp3 via gTTS (in a thread pool worker).
-    3. POSTs the audio bytes to the RoIP gateway.
-    4. Deletes the temp file.
+    3. Puts the file path onto the shared audio_queue for the Discord bot.
     """
     print(
         f"[RoIP] >> Background TTS task STARTED | unit={police_unit_code} ambulance={ambulance_id} trigger={trigger_type}",
@@ -106,48 +108,39 @@ async def generate_and_dispatch_audio(
         # Run blocking gTTS fetch in a thread pool to avoid blocking the event loop
         await asyncio.to_thread(_synthesize_tts_file, message, tmp_path)
 
-        print("[RoIP] OK TTS synthesis complete. Dispatching to gateway ...", flush=True)
-        logger.info("🔊  TTS synthesis complete. Dispatching to RoIP gateway …")
+        print("[RoIP] OK TTS synthesis complete. Dispatching to queue ...", flush=True)
+        logger.info("🔊  TTS synthesis complete. Dispatching to audio queue …")
 
         # Send text webhook if configured
         if DISCORD_WEBHOOK_URL:
             try:
-                await client.post(DISCORD_WEBHOOK_URL, json={"content": f"🚨 **RoIP Dispatch:** {message}"})
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    await client.post(DISCORD_WEBHOOK_URL, json={"content": f"🚨 **RoIP Dispatch:** {message}"})
             except Exception as e:
                 logger.error("Failed to send text webhook: %s", e)
 
-        # POST the .mp3 bytes to the gateway
-        with open(tmp_path, "rb") as audio_file:
-            audio_bytes = audio_file.read()
+        # ── Dispatch to Discord bot via in-process queue ──────────────────────
+        # NOTE: The temp file is NOT deleted here — the Discord bot consumer
+        # will delete it after playback is complete.
+        await audio_queue.put(DispatchPayload(
+            file_path=tmp_path,
+            unit_code=police_unit_code,
+            ambulance_id=ambulance_id,
+            trigger_type=trigger_type,
+        ))
 
-        print(f"[RoIP] Sending {len(audio_bytes)} bytes to {ROIP_GATEWAY_URL}", flush=True)
-
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.post(
-                ROIP_GATEWAY_URL,
-                content=audio_bytes,
-                headers={
-                    "Content-Type": "audio/mpeg",
-                    "X-Police-Unit": police_unit_code,
-                    "X-Ambulance-Id": ambulance_id,
-                    "X-Trigger-Type": trigger_type,
-                    "X-Driver-Phone": contact_number,
-                },
-            )
-            response.raise_for_status()
-            print(f"[RoIP] OK Gateway response: {response.status_code}", flush=True)
-            logger.info(
-                "✅  TTS audio dispatched → mock gateway | status=%s | unit=%s",
-                response.status_code,
-                police_unit_code,
-            )
+        print(f"[RoIP] OK Queued for Discord playback: {tmp_path}", flush=True)
+        logger.info(
+            "✅  TTS audio queued for Discord playback | unit=%s | file=%s",
+            police_unit_code,
+            tmp_path,
+        )
 
     except Exception as exc:
         print(f"[RoIP] ERROR Dispatch FAILED: {exc}", flush=True)
         logger.exception("❌  RoIP dispatch failed for ambulance %s: %s", ambulance_id, exc)
-    finally:
-        # Always clean up the temp file
+        # Clean up the temp file on synthesis/queue failure
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
-            print(f"[RoIP] DONE Temp file deleted: {tmp_path}", flush=True)
+            print(f"[RoIP] DONE Temp file deleted on error: {tmp_path}", flush=True)
             logger.debug("🗑️   Temp audio file deleted: %s", tmp_path)

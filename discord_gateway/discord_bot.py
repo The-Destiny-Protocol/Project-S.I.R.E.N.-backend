@@ -1,57 +1,30 @@
 """
 discord_gateway/discord_bot.py
 ──────────────────────────────
-Standalone Discord Voice Dispatch Bot — Mock RoIP Gateway.
+Discord Voice Dispatch Bot — Integrated RoIP Gateway.
 
-Acts as the Radio-over-IP (RoIP) gateway for the FastAPI backend.
-Receives a .wav audio alert via HTTP (from roip_service.py), plays it
-in a Discord voice channel, then disconnects cleanly.
+Runs as an asyncio background task inside the FastAPI process (no separate port).
+Consumes DispatchPayload items from the shared audio_queue and plays them
+in a Discord voice channel using FFmpegPCMAudio.
 
-Architecture:
-  - aiohttp web server  →  listens on port 8001 for audio dispatch requests
-  - discord.py bot      →  connects to a voice channel and plays the audio
-
-Run this bot standalone:
-    py discord_gateway/discord_bot.py
+Integration:
+    - Started via `start_discord_bot()` in the FastAPI lifespan.
+    - Stopped via `stop_discord_bot()` on shutdown.
+    - Audio arrives through `app.core.audio_queue.audio_queue`.
 
 Dependencies:
-    pip install discord.py aiohttp PyNaCl
+    pip install discord.py PyNaCl
 """
 
 import asyncio
 import logging
 import os
-import tempfile
-import uuid
-
-import aiohttp
-from aiohttp import web
 
 import discord
 
-# ─────────────────────────────────────────────────────────────────────────────
-# CONFIGURATION — fill these in before running
-# ─────────────────────────────────────────────────────────────────────────────
+from app.config import settings
+from app.core.audio_queue import audio_queue, DispatchPayload
 
-# Your Discord Bot token from https://discord.com/developers/applications
-DISCORD_TOKEN: str = "MTUzNDg1NTY4NDI1MDc5NjEwNA.GPGyTI.G8CHqy-DinJZen_JQYvmHb2G8kUGX3wZ6_Jh6I"
-
-# The ID of the Voice Channel the bot should join to play the alert.
-# Right-click a voice channel in Discord → Copy Channel ID (enable Developer Mode first)
-VOICE_CHANNEL_ID: int = 1534858284194856960
-
-# The aiohttp web server will listen on this port.
-# NOTE: Update ROIP_GATEWAY_URL in app/services/roip_service.py to:
-#       http://localhost:8001/api/v1/emergency/mock-roip-gateway
-WEB_SERVER_PORT: int = 8001
-
-# ─────────────────────────────────────────────────────────────────────────────
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)-8s | %(name)s — %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
 logger = logging.getLogger("discord_gateway")
 
 # ── Discord Bot Setup ─────────────────────────────────────────────────────────
@@ -60,25 +33,29 @@ intents.message_content = True  # required for some gateway events
 
 bot = discord.Client(intents=intents)
 
+# Background task reference for the queue consumer
+_consumer_task: asyncio.Task | None = None
+
 
 # ── Audio Playback Helper ─────────────────────────────────────────────────────
 async def play_audio_in_voice_channel(file_path: str, unit_code: str) -> None:
     """
-    Connects to the configured voice channel, plays the .wav file,
+    Connects to the configured voice channel, plays the audio file,
     waits for playback to finish, then disconnects.
     """
-    channel = bot.get_channel(VOICE_CHANNEL_ID)
+    channel_id = settings.discord_voice_channel_id
+    channel = bot.get_channel(channel_id)
 
     if channel is None:
         logger.error(
             "Voice channel with ID %s not found. "
-            "Check VOICE_CHANNEL_ID and that the bot has access to the server.",
-            VOICE_CHANNEL_ID,
+            "Check DISCORD_VOICE_CHANNEL_ID and that the bot has access to the server.",
+            channel_id,
         )
         return
 
     if not isinstance(channel, discord.VoiceChannel):
-        logger.error("Channel ID %s is not a voice channel.", VOICE_CHANNEL_ID)
+        logger.error("Channel ID %s is not a voice channel.", channel_id)
         return
 
     vc: discord.VoiceClient | None = None
@@ -111,122 +88,75 @@ async def play_audio_in_voice_channel(file_path: str, unit_code: str) -> None:
             logger.info("Temp audio file deleted: %s", file_path)
 
 
-# ── aiohttp Web Server ────────────────────────────────────────────────────────
-async def handle_roip_dispatch(request: web.Request) -> web.Response:
+# ── Queue Consumer (replaces the aiohttp web server) ─────────────────────────
+async def _queue_consumer() -> None:
     """
-    POST /api/v1/emergency/mock-roip-gateway
-
-    Accepts:
-        Multipart form-data with:
-          - audio   : .wav audio file bytes
-          - unit_code : police unit call-sign string
-
-    OR raw audio/wav body with custom headers:
-          - X-Police-Unit : police unit call-sign
-          - X-Ambulance-Id: ambulance UUID
-          - X-Trigger-Type: trigger source string
+    Continuously consumes DispatchPayload items from the shared audio_queue.
+    Each item triggers voice channel playback. Runs until cancelled.
     """
-    content_type = request.content_type or ""
-    unit_code = "UNKNOWN"
-    tmp_path = os.path.join(tempfile.gettempdir(), f"discord_roip_{uuid.uuid4().hex}.wav")
-
-    try:
-        # ── Multipart form-data (from a form or test client) ──────────────────
-        if "multipart" in content_type:
-            reader = await request.multipart()
-            async for part in reader:
-                if part.name == "unit_code":
-                    unit_code = (await part.read()).decode("utf-8", errors="replace")
-                elif part.name == "audio":
-                    audio_data = await part.read()
-                    with open(tmp_path, "wb") as f:
-                        f.write(audio_data)
-
-        # ── Raw audio/wav body (from roip_service.py httpx dispatch) ─────────
-        else:
-            unit_code = request.headers.get("X-Police-Unit", "UNKNOWN")
-            ambulance_id = request.headers.get("X-Ambulance-Id", "UNKNOWN")
-            trigger = request.headers.get("X-Trigger-Type", "UNKNOWN")
-            audio_data = await request.read()
-
-            with open(tmp_path, "wb") as f:
-                f.write(audio_data)
-
+    logger.info("[BOT] Queue consumer started — waiting for audio dispatches...")
+    while True:
+        try:
+            payload: DispatchPayload = await audio_queue.get()
             logger.info(
-                "[GATEWAY] Raw audio received | unit=%s ambulance=%s trigger=%s size=%d bytes",
-                unit_code, ambulance_id, trigger, len(audio_data),
+                "[BOT] Dequeued audio dispatch | unit=%s ambulance=%s trigger=%s",
+                payload.unit_code,
+                payload.ambulance_id,
+                payload.trigger_type,
             )
-
-        if not os.path.exists(tmp_path) or os.path.getsize(tmp_path) == 0:
-            logger.warning("[GATEWAY] Empty or missing audio payload — skipping playback.")
-            return web.json_response(
-                {"status": "error", "message": "Empty audio payload received."},
-                status=400,
-            )
-
-        logger.info(
-            "[GATEWAY] Audio dispatch received for unit=%s | size=%d bytes | queuing playback ...",
-            unit_code, os.path.getsize(tmp_path),
-        )
-
-        # Schedule voice playback as a background coroutine so we return HTTP 200 immediately
-        asyncio.create_task(play_audio_in_voice_channel(tmp_path, unit_code))
-
-        return web.json_response({
-            "status": "received",
-            "gateway": "discord-roip",
-            "police_unit": unit_code,
-            "audio_size_bytes": os.path.getsize(tmp_path),
-            "message": "Audio queued for voice channel playback.",
-        })
-
-    except Exception as exc:
-        logger.exception("[GATEWAY] Failed to handle dispatch request: %s", exc)
-        # Clean up temp file on error
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
-        return web.json_response(
-            {"status": "error", "message": str(exc)},
-            status=500,
-        )
-
-
-async def start_web_server() -> None:
-    """Start the aiohttp web server in the background."""
-    app = web.Application(client_max_size=1024**2 * 10)
-    app.router.add_post("/api/v1/emergency/mock-roip-gateway", handle_roip_dispatch)
-
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, host="0.0.0.0", port=WEB_SERVER_PORT)
-    await site.start()
-    logger.info(
-        "[GATEWAY] aiohttp web server started on http://0.0.0.0:%d/api/v1/emergency/mock-roip-gateway",
-        WEB_SERVER_PORT,
-    )
+            await play_audio_in_voice_channel(payload.file_path, payload.unit_code)
+            audio_queue.task_done()
+        except asyncio.CancelledError:
+            logger.info("[BOT] Queue consumer cancelled.")
+            break
+        except Exception as exc:
+            logger.exception("[BOT] Error processing audio dispatch: %s", exc)
 
 
 # ── Discord Bot Events ────────────────────────────────────────────────────────
 @bot.event
 async def on_ready() -> None:
+    global _consumer_task
     logger.info(
         "[BOT] Logged in as %s (id=%s) | Guilds: %d",
         bot.user, bot.user.id, len(bot.guilds),
     )
-    logger.info("[BOT] Ready to receive RoIP dispatches on port %d.", WEB_SERVER_PORT)
+    logger.info("[BOT] Ready to receive RoIP dispatches via in-process queue.")
+
+    # Start the queue consumer once the bot is connected and ready
+    if _consumer_task is None or _consumer_task.done():
+        _consumer_task = asyncio.create_task(_queue_consumer())
 
 
-# ── Entrypoint ────────────────────────────────────────────────────────────────
-async def main() -> None:
+# ── Lifecycle Helpers (called from FastAPI lifespan) ──────────────────────────
+async def start_discord_bot() -> None:
     """
-    Start both the Discord bot and the aiohttp web server concurrently
-    using a single asyncio event loop.
+    Start the Discord bot. This coroutine blocks until the bot disconnects,
+    so it should be wrapped in asyncio.create_task().
     """
-    async with bot:
-        # Launch the web server as a background task before the bot connects
-        await start_web_server()
-        await bot.start(DISCORD_TOKEN)
+    token = settings.discord_bot_token
+    if not token:
+        logger.warning(
+            "⚠️  DISCORD_BOT_TOKEN is empty — Discord RoIP gateway will NOT start. "
+            "Voice alerts will be silently skipped."
+        )
+        return
+
+    logger.info("[BOT] Starting Discord bot...")
+    try:
+        await bot.start(token)
+    except Exception as exc:
+        logger.exception("[BOT] Discord bot crashed: %s", exc)
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+async def stop_discord_bot() -> None:
+    """Gracefully close the Discord bot and cancel the queue consumer."""
+    global _consumer_task
+    if _consumer_task and not _consumer_task.done():
+        _consumer_task.cancel()
+        _consumer_task = None
+
+    if not bot.is_closed():
+        logger.info("[BOT] Shutting down Discord bot...")
+        await bot.close()
+        logger.info("[BOT] Discord bot closed.")

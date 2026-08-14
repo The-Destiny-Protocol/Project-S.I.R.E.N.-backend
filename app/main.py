@@ -78,10 +78,17 @@ async def lifespan(app: FastAPI):
     logger.info("🕒  Starting background task: flush_telemetry_to_db")
     flush_task = asyncio.create_task(flush_telemetry_to_db())
 
+    # ── Discord RoIP Bot (runs in the same event loop) ─────────────────────────
+    from discord_gateway.discord_bot import start_discord_bot, stop_discord_bot
+    logger.info("🤖  Starting Discord RoIP bot as background task...")
+    discord_task = asyncio.create_task(start_discord_bot())
+
     yield  # Application is running
 
     logger.info("🛑  Shutting down. Cancelling background tasks...")
     flush_task.cancel()
+    await stop_discord_bot()
+    discord_task.cancel()
     await mqtt.mqtt_shutdown()
 
 
@@ -102,14 +109,15 @@ def create_app() -> FastAPI:
     mqtt.init_app(app)
 
     # ── CORS ───────────────────────────────────────────────────────────────────
+    # Parse allowed origins from settings
+    if isinstance(settings.allowed_origins, str):
+        allowed_origins_list = [origin.strip() for origin in settings.allowed_origins.split(",") if origin.strip()]
+    else:
+        allowed_origins_list = settings.allowed_origins
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost:5173", 
-            "http://127.0.0.1:5173",
-            "http://localhost:3000",
-            "http://127.0.0.1:3000"
-        ],
+        allow_origins=allowed_origins_list,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

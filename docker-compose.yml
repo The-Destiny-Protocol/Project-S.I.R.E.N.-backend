@@ -1,18 +1,17 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # docker-compose.yml
-# Orchestrates the FastAPI backend and the Discord voice gateway bot.
+# Single-service deployment: FastAPI + Discord bot run in the same process.
 #
 # Usage:
 #   docker compose up --build          # first run / after changes
 #   docker compose up -d               # detached (background)
-#   docker compose logs -f api         # tail API logs
-#   docker compose logs -f discord-gateway  # tail bot logs
+#   docker compose logs -f api         # tail logs
 #   docker compose down                # stop and remove containers
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
 
-  # ── FastAPI / Uvicorn web server ────────────────────────────────────────────
+  # ── FastAPI / Uvicorn + Discord Bot (unified process) ──────────────────────
   api:
     build:
       context: .
@@ -38,22 +37,3 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
-
-  # ── Discord Voice Gateway Bot ───────────────────────────────────────────────
-  discord-gateway:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: sih_discord_gateway
-    restart: unless-stopped
-    ports:
-      - "8001:8001"
-    env_file:
-      - .env
-    command: python discord_gateway/discord_bot.py
-    volumes:
-      # Mount source alongside API for consistency during development.
-      - .:/app
-    depends_on:
-      api:
-        condition: service_healthy
