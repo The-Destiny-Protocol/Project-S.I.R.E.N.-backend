@@ -51,7 +51,7 @@ class TTSGenerationError(Exception):
     pass
 
 # Initialize Piper TTS model globally
-PIPER_MODEL_PATH = os.getenv("PIPER_MODEL_PATH", "models/en_US-lessac-medium.onnx")
+PIPER_MODEL_PATH = os.getenv("PIPER_MODEL_PATH", "models/en_US-lessac-low.onnx")
 try:
     if PiperVoice is None:
         raise ImportError("piper-tts is not installed.")
