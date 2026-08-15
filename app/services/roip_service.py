@@ -39,15 +39,45 @@ else:
     logger.info("✅ DISCORD_WEBHOOK_URL loaded successfully.")
 
 
+class TTSGenerationError(Exception):
+    """Custom exception raised when TTS generation fails."""
+    pass
+
+
 def _synthesize_tts_file(message: str, output_path: str) -> None:
     """
-    Synthesizes speech using Google Text-to-Speech (gTTS).
-    Configured with 'en' language and 'co.in' TLD for a natural Indian English accent.
+    Synthesizes speech using the official Google Cloud Text-to-Speech API.
+    Configured with 'en-IN' language and 'en-IN-Wavenet-C' voice for a natural 
+    Indian English accent.
     """
-    from gtts import gTTS  # lazy import
+    try:
+        # Import inside the function to keep it localized, or at module level if preferred.
+        # It's better to import at the top level for performance, but this is a background task.
+        from google.cloud import texttospeech
 
-    tts = gTTS(text=message, lang="en", tld="co.in", slow=False)
-    tts.save(output_path)
+        client = texttospeech.TextToSpeechClient()
+
+        synthesis_input = texttospeech.SynthesisInput(text=message)
+
+        voice = texttospeech.VoiceSelectionParams(
+            language_code="en-IN",
+            name="en-IN-Wavenet-C"
+        )
+
+        audio_config = texttospeech.AudioConfig(
+            audio_encoding=texttospeech.AudioEncoding.MP3
+        )
+
+        response = client.synthesize_speech(
+            input=synthesis_input, voice=voice, audio_config=audio_config
+        )
+
+        with open(output_path, "wb") as out:
+            out.write(response.audio_content)
+            
+    except Exception as exc:
+        logger.error("Google Cloud TTS API failed: %s", exc)
+        raise TTSGenerationError(f"Failed to synthesize speech: {exc}") from exc
 
 
 async def generate_and_dispatch_audio(
