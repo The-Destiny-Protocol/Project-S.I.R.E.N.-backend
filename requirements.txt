@@ -24,10 +24,6 @@ passlib[bcrypt]==1.7.4
 bcrypt==3.2.2             # Pinned to 3.2.2 because passlib 1.7.4 errors on bcrypt 4.x (AttributeError: module 'bcrypt' has no attribute '__about__')
 
 
-# --- Computer Vision / Edge Node ---
-# ultralytics
-# opencv-python
-paho-mqtt
 
 # ── Emergency Dispatch (RoIP / TTS) ──────────────────────────────────────────
 # pyttsx3                 # Fully offline Text-to-Speech (requires espeak-ng on Linux)
@@ -36,6 +32,7 @@ httpx                     # Async HTTP client for dispatching audio to RoIP gate
 
 # ── Simulation & Scripts ───────────────────────────────────────────────────────
 requests                  # Required by simulate_ambulance.py for REST API calls
+paho-mqtt                 # Required by simulate_ambulance.py for MQTT connection
 
 # ── Discord Voice Gateway (Mock RoIP Bot) ─────────────────────────────────────
 discord.py        # Discord bot framework (voice support included)
