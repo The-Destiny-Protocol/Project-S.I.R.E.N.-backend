@@ -30,7 +30,8 @@ bcrypt==3.2.2             # Pinned to 3.2.2 because passlib 1.7.4 errors on bcry
 paho-mqtt
 
 # ── Emergency Dispatch (RoIP / TTS) ──────────────────────────────────────────
-google-cloud-texttospeech
+# pyttsx3                 # Fully offline Text-to-Speech (requires espeak-ng on Linux)
+piper-tts==1.2.0          # Offline Neural Text-to-Speech
 httpx                     # Async HTTP client for dispatching audio to RoIP gateway
 
 # ── Simulation & Scripts ───────────────────────────────────────────────────────

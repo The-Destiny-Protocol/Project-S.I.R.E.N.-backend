@@ -1,14 +1,14 @@
 """
 app/services/roip_service.py
 ────────────────────────────
-Google Text-to-Speech (gTTS) synthesis + Radio-over-IP (RoIP) dispatch service.
+Offline Piper Text-to-Speech (TTS) synthesis + Radio-over-IP (RoIP) dispatch service.
 
 Flow:
   1. Compose an urgent voice alert message.
-  2. Synthesize it to a temporary .mp3 file using gTTS (natural AI voice).
+  2. Synthesize it to a temporary .wav file using Piper TTS, then convert to .mp3 using ffmpeg.
   3. Put the file path onto the shared audio_queue for the Discord bot to play.
 
-⚠️  gTTS performs a synchronous HTTP request to fetch the audio. To avoid blocking 
+⚠️  Piper TTS audio conversion uses a subprocess. To avoid blocking 
    the FastAPI event loop, synthesis is wrapped in asyncio.to_thread().
 
 Architecture Note:
@@ -23,11 +23,18 @@ import logging
 import os
 import tempfile
 import uuid
+import subprocess
+import wave
 
 import httpx
 
 from app.config import settings
 from app.core.audio_queue import audio_queue, DispatchPayload
+
+try:
+    from piper import PiperVoice
+except ImportError:
+    PiperVoice = None
 
 logger = logging.getLogger(__name__)
 
@@ -40,44 +47,53 @@ else:
 
 
 class TTSGenerationError(Exception):
-    """Custom exception raised when TTS generation fails."""
+    """Custom exception raised when offline TTS or audio conversion fails."""
     pass
+
+# Initialize Piper TTS model globally
+PIPER_MODEL_PATH = os.getenv("PIPER_MODEL_PATH", "models/en_US-lessac-medium.onnx")
+try:
+    if PiperVoice is None:
+        raise ImportError("piper-tts is not installed.")
+    piper_voice = PiperVoice.load(PIPER_MODEL_PATH)
+except Exception as e:
+    logger.warning("⚠️ Failed to load Piper TTS model from %s. TTS will fail. Error: %s", PIPER_MODEL_PATH, e)
+    piper_voice = None
+except Exception as e:
+    logger.warning("⚠️ Failed to load Piper TTS model from %s. TTS will fail. Error: %s", PIPER_MODEL_PATH, e)
+    piper_voice = None
 
 
 def _synthesize_tts_file(message: str, output_path: str) -> None:
     """
-    Synthesizes speech using the official Google Cloud Text-to-Speech API.
-    Configured with 'en-IN' language and 'en-IN-Wavenet-C' voice for a natural 
-    Indian English accent.
+    Synthesizes speech using Piper TTS (offline neural TTS).
+    Converts the output .wav to .mp3 using ffmpeg via subprocess.
     """
+    if not piper_voice:
+        raise TTSGenerationError("Piper TTS model is not loaded.")
+        
+    wav_path = output_path.replace(".mp3", ".wav")
+    
     try:
-        # Import inside the function to keep it localized, or at module level if preferred.
-        # It's better to import at the top level for performance, but this is a background task.
-        from google.cloud import texttospeech
-
-        client = texttospeech.TextToSpeechClient()
-
-        synthesis_input = texttospeech.SynthesisInput(text=message)
-
-        voice = texttospeech.VoiceSelectionParams(
-            language_code="en-IN",
-            name="en-IN-Wavenet-C"
-        )
-
-        audio_config = texttospeech.AudioConfig(
-            audio_encoding=texttospeech.AudioEncoding.MP3
-        )
-
-        response = client.synthesize_speech(
-            input=synthesis_input, voice=voice, audio_config=audio_config
-        )
-
-        with open(output_path, "wb") as out:
-            out.write(response.audio_content)
+        # Step A: Synthesize to .wav
+        import wave
+        with wave.open(wav_path, "wb") as wav_file:
+            piper_voice.synthesize(message, wav_file)
             
-    except Exception as exc:
-        logger.error("Google Cloud TTS API failed: %s", exc)
-        raise TTSGenerationError(f"Failed to synthesize speech: {exc}") from exc
+        # Step B: Convert .wav to .mp3 using ffmpeg
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-i", wav_path, "-codec:a", "libmp3lame", "-qscale:a", "2", output_path],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode != 0:
+            raise TTSGenerationError(f"ffmpeg conversion failed: {result.stderr}")
+            
+    except Exception as e:
+        raise TTSGenerationError(f"TTS Synthesis failed: {e}")
+    finally:
+        if os.path.exists(wav_path):
+            os.remove(wav_path)
 
 
 async def generate_and_dispatch_audio(
@@ -95,7 +111,7 @@ async def generate_and_dispatch_audio(
     Async entry point used by BackgroundTasks in the SOS endpoint.
 
     1. Builds a clear, urgent radio-ready alert message.
-    2. Synthesizes to a temp .mp3 via gTTS (in a thread pool worker).
+    2. Synthesizes to a temp .mp3 via Piper (in a thread pool worker).
     3. Puts the file path onto the shared audio_queue for the Discord bot.
     """
     print(
@@ -135,7 +151,7 @@ async def generate_and_dispatch_audio(
     logger.info("🔊  Synthesizing TTS alert → %s", tmp_path)
 
     try:
-        # Run blocking gTTS fetch in a thread pool to avoid blocking the event loop
+        # Run blocking TTS synthesis in a thread pool to avoid blocking the event loop
         await asyncio.to_thread(_synthesize_tts_file, message, tmp_path)
 
         print("[RoIP] OK TTS synthesis complete. Dispatching to queue ...", flush=True)

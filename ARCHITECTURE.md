@@ -50,7 +50,7 @@ flowchart TD
         direction LR
         OSRM["OSRM Routing API\n(Route Geometry)"]
         MAPBOX["Mapbox GL JS\n(Map Tiles + Rendering)"]
-        GTTS["Google TTS API\n(Voice Synthesis)"]
+        GTTS["Piper TTS Engine\n(Offline Voice Synthesis)"]
     end
     class OSRM,MAPBOX,GTTS ext
 
@@ -433,7 +433,7 @@ erDiagram
 | **Realtime Cache** | Upstash Redis (aioredis) | Write-Behind Buffer + Cooldowns |
 | **Database** | PostgreSQL + PostGIS (Supabase) | Geospatial Data Storage |
 | **ORM** | SQLAlchemy 2.0, GeoAlchemy2 | Database Abstraction |
-| **TTS Engine** | Google TTS (gTTS) | Voice Alert Synthesis |
+| **TTS Engine** | Piper TTS | Offline Voice Alert Synthesis |
 | **RoIP Gateway** | Discord.py + aiohttp | Mock Radio-over-IP Playback |
 | **ML Vision** | YOLOv8 (Ultralytics) + OpenCV | Obstruction Detection |
 | **Routing** | OSRM (public API) | Turn-by-turn Route Geometry |
