@@ -29,7 +29,7 @@ logger = logging.getLogger("discord_gateway")
 
 # ── Discord Bot Setup ─────────────────────────────────────────────────────────
 intents = discord.Intents.default()
-intents.message_content = True  # required for some gateway events
+# intents.message_content = True  # Removed: Causes PrivilegedIntentsRequired crash if not enabled in Developer Portal
 
 bot = discord.Client(intents=intents)
 
