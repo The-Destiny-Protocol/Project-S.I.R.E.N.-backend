@@ -12,7 +12,7 @@ MQTT_PORT = 8883
 MQTT_USER = "Rohit@sih"
 MQTT_PASS = "rohit5460"
 
-API_BASE = "http://localhost:8000/api/v1"
+API_BASE = "https://sih-2026-jasz.onrender.com/api/v1"
 
 # ANSI Colors
 C_GREEN = "\033[92m"
