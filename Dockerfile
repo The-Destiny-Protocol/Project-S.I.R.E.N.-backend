@@ -4,7 +4,7 @@
 # Both services are launched via docker-compose with different CMD overrides.
 # ─────────────────────────────────────────────────────────────────────────────
 
-FROM python:3.13-slim
+FROM python:3.11-slim
 
 # Prevent Python from writing .pyc files and enable unbuffered stdout/stderr
 # so logs appear immediately in `docker logs`.
