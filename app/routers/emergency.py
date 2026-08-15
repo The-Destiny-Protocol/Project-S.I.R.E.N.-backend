@@ -22,7 +22,10 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+import json
 import httpx
+from pydantic import BaseModel
+from app.mqtt.client import mqtt
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from geoalchemy2.shape import from_shape
 from shapely.geometry import Point
@@ -49,6 +52,41 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/emergency", tags=["Emergency Dispatch"])
 
 
+class SOSHTTPPayload(BaseModel):
+    ambulance_id: str
+    lat: float
+    lng: float
+    status: str
+
+@router.post(
+    "/dispatch",
+    status_code=status.HTTP_200_OK,
+    summary="HTTP fallback for SOS MQTT publish",
+    description=(
+        "Accepts SOS payload over plain HTTP POST and publishes it internally to the "
+        "HiveMQ MQTT broker. This is a fallback for constrained hardware (e.g., SIM900A) "
+        "that struggles with persistent MQTT+TLS connections."
+    )
+)
+async def trigger_sos_http(payload: SOSHTTPPayload):
+    topic = f"sih/ambulance/telemetry/{payload.ambulance_id}"
+    mqtt_payload = json.dumps({
+        "status": payload.status,
+        "lat": payload.lat,
+        "lng": payload.lng
+    })
+    
+    mqtt.publish(topic, mqtt_payload, qos=1)
+    
+    logger.info("📡 [HTTP -> MQTT] Forwarded SOS payload for %s to %s", payload.ambulance_id, topic)
+    
+    return {
+        "status": "published",
+        "message": f"Payload successfully forwarded to internal MQTT pipeline.",
+        "topic": topic
+    }
+
+
 # ── SOS Trigger Endpoint ──────────────────────────────────────────────────────
 @router.post(
     "/ambulances/{ambulance_id}/sos",
@@ -67,7 +105,6 @@ async def trigger_sos(
     body: SOSRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(RoleChecker(["StandardUser", "Dispatcher", "Admin"])),
 ) -> SOSResponse:
     # ── 1. Fetch and validate the ambulance ────────────────────────────────────
     try:
