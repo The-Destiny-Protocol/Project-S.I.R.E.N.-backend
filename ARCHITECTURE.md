@@ -435,6 +435,6 @@ erDiagram
 | **ORM** | SQLAlchemy 2.0, GeoAlchemy2 | Database Abstraction |
 | **TTS Engine** | Piper TTS | Offline Voice Alert Synthesis |
 | **RoIP Gateway** | Discord.py + aiohttp | Mock Radio-over-IP Playback |
-| **ML Vision** | YOLOv8 (Ultralytics) + OpenCV | Obstruction Detection |
+
 | **Routing** | OSRM (public API) | Turn-by-turn Route Geometry |
 | **Containerisation** | Docker, Docker Compose | Multi-service Orchestration |
