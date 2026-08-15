@@ -64,8 +64,17 @@ async def play_audio_in_voice_channel(file_path: str, unit_code: str) -> None:
         vc = await channel.connect()
 
         logger.info("Playing TTS alert for unit: %s | file: %s", unit_code, file_path)
-        audio_source = discord.FFmpegPCMAudio(file_path)
-        vc.play(audio_source)
+        # On Windows local dev, ffmpeg is in PATH. On Render (Linux), specify absolute path fallback.
+        import shutil
+        ffmpeg_exe = shutil.which("ffmpeg") or "/usr/bin/ffmpeg"
+        
+        audio_source = discord.FFmpegPCMAudio(file_path, executable=ffmpeg_exe, options="-vn")
+        
+        def after_playback(error):
+            if error:
+                logger.error("Player error during playback: %s", error)
+        
+        vc.play(audio_source, after=after_playback)
 
         # Wait until playback finishes before disconnecting
         while vc.is_playing():
