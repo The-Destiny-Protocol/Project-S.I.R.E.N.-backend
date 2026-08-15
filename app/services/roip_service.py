@@ -5,10 +5,10 @@ Offline Piper Text-to-Speech (TTS) synthesis + Radio-over-IP (RoIP) dispatch ser
 
 Flow:
   1. Compose an urgent voice alert message.
-  2. Synthesize it to a temporary .wav file using Piper TTS, then convert to .mp3 using ffmpeg.
+  2. Synthesize it to a temporary .mp3 file using Amazon Polly.
   3. Put the file path onto the shared audio_queue for the Discord bot to play.
 
-⚠️  Piper TTS audio conversion uses a subprocess. To avoid blocking 
+⚠️  Amazon Polly audio conversion performs a synchronous HTTP request. To avoid blocking 
    the FastAPI event loop, synthesis is wrapped in asyncio.to_thread().
 
 Architecture Note:
@@ -30,11 +30,8 @@ import httpx
 
 from app.config import settings
 from app.core.audio_queue import audio_queue, DispatchPayload
-
-try:
-    from piper import PiperVoice
-except ImportError:
-    PiperVoice = None
+import boto3
+from botocore.exceptions import BotoCoreError, ClientError
 
 logger = logging.getLogger(__name__)
 
@@ -50,50 +47,40 @@ class TTSGenerationError(Exception):
     """Custom exception raised when offline TTS or audio conversion fails."""
     pass
 
-# Initialize Piper TTS model globally
-PIPER_MODEL_PATH = os.getenv("PIPER_MODEL_PATH", "models/en_US-lessac-low.onnx")
+# Initialize Amazon Polly client globally
 try:
-    if PiperVoice is None:
-        raise ImportError("piper-tts is not installed.")
-    piper_voice = PiperVoice.load(PIPER_MODEL_PATH)
+    polly_client = boto3.client('polly', region_name='ap-south-1')
 except Exception as e:
-    logger.warning("⚠️ Failed to load Piper TTS model from %s. TTS will fail. Error: %s", PIPER_MODEL_PATH, e)
-    piper_voice = None
-except Exception as e:
-    logger.warning("⚠️ Failed to load Piper TTS model from %s. TTS will fail. Error: %s", PIPER_MODEL_PATH, e)
-    piper_voice = None
+    logger.warning("⚠️ Failed to initialize Amazon Polly client. TTS will fail. Error: %s", e)
+    polly_client = None
 
 
 def _synthesize_tts_file(message: str, output_path: str) -> None:
     """
-    Synthesizes speech using Piper TTS (offline neural TTS).
-    Converts the output .wav to .mp3 using ffmpeg via subprocess.
+    Synthesizes speech using Amazon Polly.
+    Writes the resulting .mp3 audio stream directly to the file.
     """
-    if not piper_voice:
-        raise TTSGenerationError("Piper TTS model is not loaded.")
-        
-    wav_path = output_path.replace(".mp3", ".wav")
-    
+    if not polly_client:
+        raise TTSGenerationError("Amazon Polly client is not loaded.")
+            
     try:
-        # Step A: Synthesize to .wav
-        import wave
-        with wave.open(wav_path, "wb") as wav_file:
-            piper_voice.synthesize(message, wav_file)
-            
-        # Step B: Convert .wav to .mp3 using ffmpeg
-        result = subprocess.run(
-            ["ffmpeg", "-y", "-i", wav_path, "-codec:a", "libmp3lame", "-qscale:a", "2", output_path],
-            capture_output=True,
-            text=True
+        response = polly_client.synthesize_speech(
+            Text=message,
+            OutputFormat='mp3',
+            VoiceId='Aditi',
+            Engine='standard'
         )
-        if result.returncode != 0:
-            raise TTSGenerationError(f"ffmpeg conversion failed: {result.stderr}")
+        
+        if "AudioStream" in response:
+            with open(output_path, "wb") as file:
+                file.write(response["AudioStream"].read())
+        else:
+            raise TTSGenerationError("No AudioStream returned from Amazon Polly.")
             
+    except (BotoCoreError, ClientError) as error:
+        raise TTSGenerationError(f"AWS Polly synthesis failed: {error}")
     except Exception as e:
         raise TTSGenerationError(f"TTS Synthesis failed: {e}")
-    finally:
-        if os.path.exists(wav_path):
-            os.remove(wav_path)
 
 
 async def generate_and_dispatch_audio(
@@ -111,7 +98,7 @@ async def generate_and_dispatch_audio(
     Async entry point used by BackgroundTasks in the SOS endpoint.
 
     1. Builds a clear, urgent radio-ready alert message.
-    2. Synthesizes to a temp .mp3 via Piper (in a thread pool worker).
+    2. Synthesizes to a temp .mp3 via Amazon Polly (in a thread pool worker).
     3. Puts the file path onto the shared audio_queue for the Discord bot.
     """
     print(

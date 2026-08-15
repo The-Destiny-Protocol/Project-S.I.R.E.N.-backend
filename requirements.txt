@@ -31,7 +31,7 @@ paho-mqtt
 
 # ── Emergency Dispatch (RoIP / TTS) ──────────────────────────────────────────
 # pyttsx3                 # Fully offline Text-to-Speech (requires espeak-ng on Linux)
-piper-tts==1.2.0          # Offline Neural Text-to-Speech
+boto3                     # AWS SDK for Amazon Polly TTS
 httpx                     # Async HTTP client for dispatching audio to RoIP gateway
 
 # ── Simulation & Scripts ───────────────────────────────────────────────────────
