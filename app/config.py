@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     # ── Discord RoIP Gateway Bot ──────────────────────────────────────────────
     discord_bot_token: str = ""
     discord_voice_channel_id: int = 0
+    
+    # ── AWS Polly ──────────────────────────────────────────────────────────────
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+    aws_default_region: str = "ap-south-1"
 
 
 
