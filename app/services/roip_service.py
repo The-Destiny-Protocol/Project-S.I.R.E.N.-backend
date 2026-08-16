@@ -49,7 +49,12 @@ class TTSGenerationError(Exception):
 
 # Initialize Amazon Polly client globally
 try:
-    polly_client = boto3.client('polly', region_name='ap-south-1')
+    polly_client = boto3.client(
+        'polly',
+        aws_access_key_id=settings.aws_access_key_id if settings.aws_access_key_id else None,
+        aws_secret_access_key=settings.aws_secret_access_key if settings.aws_secret_access_key else None,
+        region_name=settings.aws_default_region
+    )
 except Exception as e:
     logger.warning("⚠️ Failed to initialize Amazon Polly client. TTS will fail. Error: %s", e)
     polly_client = None

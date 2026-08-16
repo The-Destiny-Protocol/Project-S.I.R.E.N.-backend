@@ -12,15 +12,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 # ── System dependencies ───────────────────────────────────────────────────────
-# ffmpeg  : required by discord.py FFmpegPCMAudio to stream .wav audio in voice channels
+# ffmpeg  : required by discord.py FFmpegPCMAudio to stream .mp3 audio in voice channels
 # libpq-dev: required by psycopg2 (PostgreSQL driver)
-# gcc     : required to compile some Python C-extensions (e.g. psycopg2-binary fallback)
+# gcc, libsodium-dev, libffi-dev: required to compile PyNaCl/psycopg2 extensions safely
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
     ffmpeg \
     libpq-dev \
     gcc \
-    espeak-ng libespeak-ng1 \
+    libsodium-dev \
+    libffi-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
