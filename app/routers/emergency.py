@@ -271,12 +271,17 @@ async def mock_roip_gateway(request: Request) -> dict:
 
 @router.get("/bot-status", tags=["Emergency Dispatch"])
 async def get_bot_status() -> dict:
+    import os
+    token = settings.discord_bot_token
+    token_preview = f"{token[:5]}...{token[-5:]}" if token and len(token) > 10 else "EMPTY_OR_TOO_SHORT"
     return {
         "bot_ready": discord_bot.is_ready(),
         "bot_closed": discord_bot.is_closed(),
         "bot_user": str(discord_bot.user) if discord_bot.user else None,
         "queue_size": audio_queue.qsize(),
-        "voice_clients": len(discord_bot.voice_clients)
+        "voice_clients": len(discord_bot.voice_clients),
+        "token_preview": token_preview,
+        "worker_pid": os.getpid()
     }
 
 # ── GET /incidents/active ─────────────────────────────────────────────────────
