@@ -155,11 +155,14 @@ async def on_ready() -> None:
 
 
 # ── Lifecycle Helpers (called from FastAPI lifespan) ──────────────────────────
+bot_last_error = None
+
 async def start_discord_bot() -> None:
     """
     Start the Discord bot. This coroutine blocks until the bot disconnects,
     so it should be wrapped in asyncio.create_task().
     """
+    global bot_last_error
     token = settings.discord_bot_token
     if not token:
         logger.warning(
@@ -172,6 +175,7 @@ async def start_discord_bot() -> None:
     try:
         await bot.start(token)
     except Exception as exc:
+        bot_last_error = f"{type(exc).__name__}: {str(exc)}"
         logger.exception("[BOT] Discord bot crashed: %s", exc)
 
 
