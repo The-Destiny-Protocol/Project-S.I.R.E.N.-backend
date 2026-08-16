@@ -22,6 +22,9 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+from discord_gateway.discord_bot import bot as discord_bot
+from app.core.audio_queue import audio_queue
+
 import json
 import httpx
 from pydantic import BaseModel
@@ -265,6 +268,16 @@ async def mock_roip_gateway(request: Request) -> dict:
         "message": "Audio payload received by mock gateway. In production, this would be broadcast over radio.",
     }
 
+
+@router.get("/bot-status", tags=["Emergency Dispatch"])
+async def get_bot_status() -> dict:
+    return {
+        "bot_ready": discord_bot.is_ready(),
+        "bot_closed": discord_bot.is_closed(),
+        "bot_user": str(discord_bot.user) if discord_bot.user else None,
+        "queue_size": audio_queue.qsize(),
+        "voice_clients": len(discord_bot.voice_clients)
+    }
 
 # ── GET /incidents/active ─────────────────────────────────────────────────────
 @router.get(
