@@ -60,26 +60,43 @@ async def play_audio_in_voice_channel(file_path: str, unit_code: str) -> None:
 
     vc: discord.VoiceClient | None = None
     try:
+        # Diagnostic 1: File check
+        file_size = os.path.getsize(file_path) if os.path.exists(file_path) else -1
+        logger.info("[BOT-DIAG] MP3 File exists? %s | Size: %s bytes", os.path.exists(file_path), file_size)
+
+        # Diagnostic 2: Opus & PyNaCl check
+        logger.info("[BOT-DIAG] Discord Opus Loaded? %s", discord.opus.is_loaded())
+        
         logger.info("Connecting to voice channel: %s", channel.name)
-        vc = await channel.connect()
+        vc = await channel.connect(timeout=20.0)
 
         logger.info("Playing TTS alert for unit: %s | file: %s", unit_code, file_path)
-        # On Windows local dev, ffmpeg is in PATH. On Render (Linux), specify absolute path fallback.
+        
         import shutil
-        ffmpeg_exe = shutil.which("ffmpeg") or "/usr/bin/ffmpeg"
+        ffmpeg_exe = shutil.which("ffmpeg") or "ffmpeg"
+        logger.info("[BOT-DIAG] Resolved FFmpeg executable: %s", ffmpeg_exe)
         
         audio_source = discord.FFmpegPCMAudio(file_path, executable=ffmpeg_exe, options="-vn")
         
         def after_playback(error):
             if error:
-                logger.error("Player error during playback: %s", error)
+                logger.error("[BOT-DIAG] Player error during playback: %s", error)
+            else:
+                logger.info("[BOT-DIAG] Playback finished cleanly without errors.")
         
         vc.play(audio_source, after=after_playback)
 
+        logger.info("[BOT-DIAG] Playback started. Entering sleep loop...")
+        
         # Wait until playback finishes before disconnecting
+        loops = 0
         while vc.is_playing():
             await asyncio.sleep(0.5)
+            loops += 1
+            if loops % 4 == 0:
+                logger.info("[BOT-DIAG] Still playing... (%d seconds elapsed)", loops * 0.5)
 
+        logger.info("[BOT-DIAG] Playback loop exited. Total duration: %s seconds", loops * 0.5)
         logger.info("Playback complete for unit: %s", unit_code)
 
     except discord.ClientException as exc:
