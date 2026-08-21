@@ -63,6 +63,10 @@ ACTIVE_OVERRIDES = set()
 PREVIOUS_LOCATIONS = {}
 COOLDOWNS = {}  # Tracks the last time (time.time()) a TTS alert fired per override_key
 
+# Event to trigger telemetry flush. Initialized to True to catch any lingering Redis data on startup.
+telemetry_event = asyncio.Event()
+telemetry_event.set()
+
 
 def load_traffic_signals():
     global CACHED_SIGNALS, SIGNALS_LOADED
@@ -271,6 +275,9 @@ async def _handle_telemetry(ambulance_id: str, raw_payload: bytes) -> None:
 
     # ── 1. Store in Redis ───────────────────────────────────────────────────────
     await redis_client.hset("telemetry_buffer", ambulance_id, json.dumps(data))
+    
+    # Notify the background task that new telemetry is ready to be processed
+    telemetry_event.set()
 
     # ── 2. Broadcast to all connected WebSocket clients (Live Map) ───────────
     from app.services.ws_manager import live_map_manager
@@ -420,11 +427,21 @@ async def _handle_telemetry(ambulance_id: str, raw_payload: bytes) -> None:
 
 async def flush_telemetry_to_db() -> None:
     """
-    Background task to flush telemetry buffer from Redis to PostgreSQL every 5 seconds.
+    Background task to flush telemetry buffer from Redis to PostgreSQL.
+    Uses an event-driven debounce mechanism to avoid hitting Redis rate limits during idle periods.
     Solves EMAXCONNSESSION by batching updates.
     """
     while True:
+        # Wait until we actually receive telemetry
+        await telemetry_event.wait()
+        
+        # Clear the event immediately. Any telemetry arriving during the sleep 
+        # below will set the event again, ensuring a subsequent flush.
+        telemetry_event.clear()
+        
+        # Debounce: wait 5 seconds to batch multiple incoming telemetry packets together
         await asyncio.sleep(5)
+        
         try:
             async with redis_client.pipeline(transaction=True) as pipe:
                 pipe.hgetall("telemetry_buffer")
